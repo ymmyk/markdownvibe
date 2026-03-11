@@ -1,0 +1,6 @@
+port: 5123
+output_dir: ./output
+theme_dir: ./theme/default
+paths:
+  - full_path: ./content
+    web_path: ""

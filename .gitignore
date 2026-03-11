@@ -12,13 +12,16 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
+config.yml
+config.yaml
+config.json
+!config.example.yml
 
-# Generated content cache
-content/**/*.html
+# Generated cache and artifacts
+output/
 
 # Test and browser artifacts
 .playwright-cli/
-output/playwright/
 coverage/
 .nyc_output/
 
