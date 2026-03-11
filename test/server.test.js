@@ -118,6 +118,11 @@ test("rendered pages use the configured app name and place the toc before the do
 
   assert.equal(response.status, 200);
   assert.match(response.text, />Research Desk<\/a>/);
+  assert.ok(response.text.indexOf('class="toc-toggle"') < response.text.indexOf('class="brand"'));
+  assert.ok(response.text.indexOf('class="brand"') < response.text.indexOf('class="theme-switcher theme-switcher-desktop"'));
+  assert.match(response.text, /data-theme-choice="auto"[\s\S]*<svg/);
+  assert.match(response.text, /data-theme-choice="day"[\s\S]*<svg/);
+  assert.match(response.text, /data-theme-choice="night"[\s\S]*<svg/);
   assert.ok(response.text.indexOf('class="toc-panel"') < response.text.indexOf('class="document"'));
 });
 
