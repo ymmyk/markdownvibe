@@ -7,7 +7,6 @@ import {
   mkdtemp,
   mkdir,
   readFile,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import request from "supertest";
@@ -16,7 +15,14 @@ import { createApp } from "../src/server.js";
 
 const themeDir = path.resolve("theme/default");
 
-async function makeFixture() {
+function extractMetaValue(html, name) {
+  const match = html.match(
+    new RegExp(`<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']+)["']`, "i"),
+  );
+  return match?.[1] ?? null;
+}
+
+async function makeFixture(overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "markdownvibe-"));
   const contentRoot = path.join(root, "content");
   const outputRoot = path.join(root, "output");
@@ -62,9 +68,24 @@ The first version.
   await writeFile(path.join(contentRoot, "mixed", "child.md"), "# Child\n\nFolder wins.\n", "utf8");
 
   await writeFile(path.join(contentRoot, "note.txt"), "passthrough", "utf8");
+  await writeFile(
+    path.join(contentRoot, "title-source.md"),
+    `---
+title: Metadata Title
+---
+
+# Document Heading
+
+## Notes
+
+The browser title should use the H1.
+`,
+    "utf8",
+  );
 
   return {
     app: createApp({
+      appName: overrides.appName,
       themeDir,
       outputRoot,
       mounts: [{ full_path: contentRoot, web_path: "docs" }],
@@ -86,7 +107,18 @@ test("extensionless routes generate and serve cached html under output", async (
 
   const generated = await readFile(path.join(outputRoot, "docs", "alpha.html"), "utf8");
   assert.match(generated, /Contents/);
+  assert.ok(extractMetaValue(generated, "markdown-hash"));
+  assert.ok(extractMetaValue(generated, "theme-hash"));
   await assert.rejects(access(path.join(contentRoot, "alpha.html")));
+});
+
+test("rendered pages use the configured app name and place the toc before the document", async () => {
+  const { app } = await makeFixture({ appName: "Research Desk" });
+  const response = await request(app).get("/docs/alpha");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, />Research Desk<\/a>/);
+  assert.ok(response.text.indexOf('class="toc-panel"') < response.text.indexOf('class="document"'));
 });
 
 test("raw markdown requests pass through unchanged from mounted paths", async () => {
@@ -97,6 +129,32 @@ test("raw markdown requests pass through unchanged from mounted paths", async ()
   assert.match(response.headers["content-type"], /text\/markdown/);
   assert.match(response.text, /^---/);
   assert.match(response.text, /## Findings/);
+});
+
+test("stale embedded theme hashes force html regeneration", async () => {
+  const { app, outputRoot } = await makeFixture();
+  const htmlPath = path.join(outputRoot, "docs", "alpha.html");
+
+  await request(app).get("/docs/alpha");
+  const generated = await readFile(htmlPath, "utf8");
+  const originalThemeHash = extractMetaValue(generated, "theme-hash");
+  assert.ok(originalThemeHash);
+
+  await writeFile(
+    htmlPath,
+    generated
+      .replace(originalThemeHash, "stale-theme-hash")
+      .replace("The first version.", "Stale cached content."),
+    "utf8",
+  );
+
+  const response = await request(app).get("/docs/alpha.html");
+  const regenerated = await readFile(htmlPath, "utf8");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /The first version/);
+  assert.doesNotMatch(response.text, /Stale cached content/);
+  assert.equal(extractMetaValue(regenerated, "theme-hash"), originalThemeHash);
 });
 
 test("static files are served directly from the source mount", async () => {
@@ -128,6 +186,7 @@ test("exact folder matches render a generated directory index", async () => {
   assert.match(response.text, />Folders</);
   assert.match(response.text, />Pages</);
   assert.match(response.text, />Assets</);
+  assert.match(response.text, /href="\/docs\/">..<\/a>/);
   assert.match(response.text, /href="\/docs\/library\/archive\/"/);
   assert.match(response.text, /href="\/docs\/library\/research\.html"/);
   assert.match(response.text, /href="\/docs\/library\/research\.md"/);
@@ -135,6 +194,15 @@ test("exact folder matches render a generated directory index", async () => {
 
   const generated = await readFile(path.join(outputRoot, "docs", "library", "index.html"), "utf8");
   assert.match(generated, /Auto-generated directory index/);
+});
+
+test("mount root auto indexes include a parent link to the site root", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /Auto-generated directory index for \/docs\//);
+  assert.match(response.text, /href="\/">..<\/a>/);
 });
 
 test("html requests can target an exact folder match", async () => {
@@ -183,6 +251,7 @@ test("yaml config files define port, output root, and mounted paths", async () =
   await writeFile(
     configPath,
     `port: 5123
+app_name: Research Desk
 output_dir: ./cache
 theme_dir: ${themeDir}
 paths:
@@ -195,6 +264,7 @@ paths:
   const config = loadConfig({ configPath });
 
   assert.equal(config.port, 5123);
+  assert.equal(config.appName, "Research Desk");
   assert.equal(config.mounts[0].webPath, "/my-files");
   assert.equal(config.outputRoot, path.join(root, "cache"));
 });
@@ -205,9 +275,9 @@ test("html is regenerated when markdown changes without touching the source tree
   const markdownPath = path.join(contentRoot, "alpha.md");
 
   await request(app).get("/docs/alpha");
-  const initialStat = await stat(htmlPath);
+  const initialHtml = await readFile(htmlPath, "utf8");
+  const initialMarkdownHash = extractMetaValue(initialHtml, "markdown-hash");
 
-  await new Promise((resolve) => setTimeout(resolve, 25));
   await writeFile(
     markdownPath,
     `---
@@ -225,10 +295,20 @@ The second version.
   );
 
   const response = await request(app).get("/docs/alpha.html");
-  const updatedStat = await stat(htmlPath);
+  const updatedHtml = await readFile(htmlPath, "utf8");
+  const updatedMarkdownHash = extractMetaValue(updatedHtml, "markdown-hash");
 
   assert.equal(response.status, 200);
   assert.match(response.text, /The second version/);
-  assert.ok(updatedStat.mtimeMs > initialStat.mtimeMs);
+  assert.notEqual(updatedMarkdownHash, initialMarkdownHash);
   await assert.rejects(access(path.join(contentRoot, "alpha.html")));
+});
+
+test("html title follows the first document h1 when present", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/title-source");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /<title>Document Heading<\/title>/);
+  assert.match(response.text, /<h1>Metadata Title<\/h1>/);
 });

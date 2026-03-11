@@ -3,7 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{TITLE}}</title>
+    <title>{{HTML_TITLE}}</title>
+    <meta name="markdown-hash" content="{{MARKDOWN_HASH}}" />
+    <meta name="theme-hash" content="{{THEME_HASH}}" />
+    <script>
+      (() => {
+        try {
+          const key = "markdownvibe-theme";
+          const stored = localStorage.getItem(key);
+          const preference =
+            stored === "day" || stored === "night" || stored === "auto" ? stored : "auto";
+          const prefersNight =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const resolved = preference === "auto" ? (prefersNight ? "night" : "day") : preference;
+          document.documentElement.dataset.themePreference = preference;
+          document.documentElement.dataset.resolvedTheme = resolved;
+        } catch {}
+      })();
+    </script>
     <link rel="icon" href="{{ASSET_PREFIX}}/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="{{ASSET_PREFIX}}/theme.css" />
     <link rel="stylesheet" href="{{ASSET_PREFIX}}/highlight.css" />
@@ -12,31 +30,46 @@
   <body>
     <div class="shell">
       <header class="topbar">
-        <a class="brand" href="/">markdownvibe</a>
-        <button
-          class="toc-toggle"
-          type="button"
-          aria-expanded="false"
-          aria-controls="toc-panel"
-          aria-label="Open contents"
-          data-toc-toggle
-        >
-          <span class="hamburger" aria-hidden="true">
-            <span class="hamburger-bar"></span>
-            <span class="hamburger-bar"></span>
-            <span class="hamburger-bar"></span>
-          </span>
-          <span class="sr-only">Contents</span>
-        </button>
+        <div class="topbar-start">
+          <button
+            class="toc-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="toc-panel"
+            aria-label="Open contents"
+            data-toc-toggle
+          >
+            <span class="hamburger" aria-hidden="true">
+              <span class="hamburger-bar"></span>
+              <span class="hamburger-bar"></span>
+              <span class="hamburger-bar"></span>
+            </span>
+            <span class="control-label">Contents</span>
+          </button>
+        </div>
+        <div class="topbar-end">
+          <div class="theme-switcher theme-switcher-desktop" role="group" aria-label="Color theme">
+            <button class="theme-option" type="button" data-theme-choice="auto">Auto</button>
+            <button class="theme-option" type="button" data-theme-choice="day">Day</button>
+            <button class="theme-option" type="button" data-theme-choice="night">Night</button>
+          </div>
+          <details class="mobile-menu" data-mobile-menu>
+            <summary class="mobile-menu-toggle" aria-label="Open display menu">
+              Theme
+            </summary>
+            <div class="mobile-menu-panel">
+              <p class="mobile-menu-label">Color theme</p>
+              <div class="theme-switcher theme-switcher-mobile" role="group" aria-label="Color theme">
+                <button class="theme-option" type="button" data-theme-choice="auto">Auto</button>
+                <button class="theme-option" type="button" data-theme-choice="day">Day</button>
+                <button class="theme-option" type="button" data-theme-choice="night">Night</button>
+              </div>
+            </div>
+          </details>
+          <a class="brand" href="/">{{APP_NAME}}</a>
+        </div>
       </header>
       <div class="layout">
-        <main class="document">
-          <p class="eyebrow">{{SOURCE_PATH}}</p>
-          <h1>{{TITLE}}</h1>
-          {{SUMMARY}}
-          {{META}}
-          <article class="prose">{{CONTENT}}</article>
-        </main>
         <aside class="toc-panel" id="toc-panel" data-toc-panel>
           <div class="toc-header">
             <span>Contents</span>
@@ -48,6 +81,13 @@
             {{TOC}}
           </nav>
         </aside>
+        <main class="document">
+          <p class="eyebrow">{{SOURCE_PATH}}</p>
+          <h1>{{TITLE}}</h1>
+          {{SUMMARY}}
+          {{META}}
+          <article class="prose">{{CONTENT}}</article>
+        </main>
       </div>
       <div class="scrim" hidden data-toc-scrim></div>
     </div>

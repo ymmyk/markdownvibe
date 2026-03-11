@@ -137,14 +137,15 @@ function stripLeadingTitleHeading(tokens, title, headings) {
   };
 }
 
-export async function renderMarkdownDocument({ markdownPath, sourcePath }) {
-  const source = await readFile(markdownPath, "utf8");
+export async function renderMarkdownDocument({ markdownPath, sourcePath, markdownSource }) {
+  const source = markdownSource ?? (await readFile(markdownPath, "utf8"));
   const parsed = matter(source);
   const tokens = markdown.parse(parsed.content, {});
   const headings = collectHeadings(tokens);
+  const documentHeading = headings.find((heading) => heading.level === 1)?.text;
   const title =
     parsed.data.title ??
-    headings.find((heading) => heading.level === 1)?.text ??
+    documentHeading ??
     path.basename(markdownPath, ".md");
   const { bodyTokens, headings: visibleHeadings } = stripLeadingTitleHeading(tokens, title, headings);
   const bodyHtml = markdown.renderer.render(bodyTokens, markdown.options, {});
@@ -159,6 +160,7 @@ export async function renderMarkdownDocument({ markdownPath, sourcePath }) {
 
   return {
     title,
+    htmlTitle: documentHeading ?? title,
     summary,
     metadata,
     headings: visibleHeadings,

@@ -27,12 +27,16 @@ function renderSummary(summary, escapeHtml) {
   return `<p class="deck">${escapeHtml(summary)}</p>`;
 }
 
-export async function renderPage({ themeDir, assetPrefix, document }) {
+export async function renderPage({ themeDir, assetPrefix, appName, hashes, document }) {
   const templatePath = path.join(themeDir, "template.html");
   const template = await readFile(templatePath, "utf8");
 
   return template
+    .replaceAll("{{HTML_TITLE}}", document.escapeHtml(document.htmlTitle ?? document.title))
+    .replaceAll("{{MARKDOWN_HASH}}", document.escapeHtml(hashes.markdownHash))
+    .replaceAll("{{THEME_HASH}}", document.escapeHtml(hashes.themeHash))
     .replaceAll("{{TITLE}}", document.escapeHtml(document.title))
+    .replaceAll("{{APP_NAME}}", document.escapeHtml(appName))
     .replaceAll("{{SOURCE_PATH}}", document.escapeHtml(document.sourcePath))
     .replaceAll("{{SUMMARY}}", renderSummary(document.summary, document.escapeHtml))
     .replaceAll("{{META}}", renderMeta(document.metadata, document.escapeHtml))

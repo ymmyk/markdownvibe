@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import {
   access,
@@ -43,28 +44,6 @@ async function fileExists(targetPath) {
   }
 }
 
-async function maxMtimeMs(targetPath) {
-  const targetStat = await stat(targetPath);
-  let latest = targetStat.mtimeMs;
-
-  if (!targetStat.isDirectory()) {
-    return latest;
-  }
-
-  const entries = await readdir(targetPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const entryPath = path.join(targetPath, entry.name);
-    latest = Math.max(latest, await maxMtimeMs(entryPath));
-  }
-
-  return latest;
-}
-
-async function maxFileMtimeMs(paths) {
-  const stats = await Promise.all(paths.map((targetPath) => stat(targetPath)));
-  return Math.max(...stats.map((entry) => entry.mtimeMs));
-}
-
 function decodeRequestPath(requestPath) {
   const decoded = decodeURIComponent(requestPath);
   if (decoded.includes("\0")) {
@@ -104,6 +83,99 @@ function buildChildRequestPath(basePath, childName, { trailingSlash = false } = 
     basePath === "/" ? "/" : basePath.endsWith("/") ? basePath : `${basePath}/`;
   const href = `${normalizedBase}${encodeURIComponent(childName)}`;
   return trailingSlash ? `${href}/` : href;
+}
+
+function buildParentRequestPath(basePath) {
+  if (basePath === "/") {
+    return null;
+  }
+
+  const currentPath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+  const parentPath = path.posix.dirname(currentPath);
+  if (parentPath === "/" || parentPath === ".") {
+    return "/";
+  }
+
+  return `${parentPath}/`;
+}
+
+function hashString(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hashJson(value) {
+  return hashString(JSON.stringify(value));
+}
+
+async function listFilesRecursively(rootPath, currentPath = rootPath) {
+  const entries = await readdir(currentPath, { withFileTypes: true });
+  const sortedEntries = entries.sort((left, right) => left.name.localeCompare(right.name));
+  const files = [];
+
+  for (const entry of sortedEntries) {
+    const entryPath = path.join(currentPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursively(rootPath, entryPath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push({
+        relativePath: path.relative(rootPath, entryPath).replace(/\\/g, "/"),
+        absolutePath: entryPath,
+      });
+    }
+  }
+
+  return files;
+}
+
+async function getThemeHash({ themeDir, appName, assetPrefix }) {
+  const hash = createHash("sha256");
+  hash.update(`app-name:${appName}\n`);
+  hash.update(`asset-prefix:${assetPrefix}\n`);
+
+  const themeFiles = await listFilesRecursively(themeDir);
+  for (const file of themeFiles) {
+    hash.update(`theme:${file.relativePath}\n`);
+    hash.update(await readFile(file.absolutePath));
+    hash.update("\n");
+  }
+
+  const dependencyFiles = [...rendererDependencyPaths].sort();
+  for (const dependencyPath of dependencyFiles) {
+    hash.update(`renderer:${path.basename(dependencyPath)}\n`);
+    hash.update(await readFile(dependencyPath));
+    hash.update("\n");
+  }
+
+  return hash.digest("hex");
+}
+
+function extractMetaValue(html, name) {
+  const metaTags = html.match(/<meta\b[^>]*>/gi) ?? [];
+  for (const tag of metaTags) {
+    const nameMatch = tag.match(/\bname=["']([^"']+)["']/i);
+    if (nameMatch?.[1] !== name) {
+      continue;
+    }
+
+    return tag.match(/\bcontent=["']([^"']*)["']/i)?.[1] ?? null;
+  }
+
+  return null;
+}
+
+async function readEmbeddedHashes(htmlPath) {
+  try {
+    const html = await readFile(htmlPath, "utf8");
+    return {
+      markdownHash: extractMetaValue(html, "markdown-hash"),
+      themeHash: extractMetaValue(html, "theme-hash"),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function renderIndexToc(sections) {
@@ -152,8 +224,11 @@ function renderIndexSection(section) {
 }
 
 async function renderIndexPage({
+  appName,
   themeDir,
   assetPrefix,
+  contentHash,
+  themeHash,
   title,
   summary,
   sourcePath,
@@ -168,8 +243,14 @@ async function renderIndexPage({
   return renderPage({
     themeDir,
     assetPrefix,
+    appName,
+    hashes: {
+      markdownHash: contentHash,
+      themeHash,
+    },
     document: {
       title,
+      htmlTitle: title,
       summary,
       metadata,
       tocHtml: renderIndexToc(sections),
@@ -180,7 +261,7 @@ async function renderIndexPage({
   });
 }
 
-async function renderDirectoryIndex({ directoryPath, mountedPath, themeDir, assetPrefix }) {
+async function buildDirectoryIndexDocument({ directoryPath, mountedPath }) {
   const normalizedMountedPath =
     mountedPath === "/" ? "/" : mountedPath.endsWith("/") ? mountedPath : `${mountedPath}/`;
   const entries = (await readdir(directoryPath, { withFileTypes: true }))
@@ -192,6 +273,16 @@ async function renderDirectoryIndex({ directoryPath, mountedPath, themeDir, asse
   const folders = [];
   const pages = [];
   const assets = [];
+  const parentPath = buildParentRequestPath(normalizedMountedPath);
+
+  if (parentPath) {
+    folders.push({
+      label: "..",
+      kind: "Up",
+      href: parentPath,
+      detail: "Parent directory",
+    });
+  }
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
@@ -243,9 +334,7 @@ async function renderDirectoryIndex({ directoryPath, mountedPath, themeDir, asse
     { id: "assets", title: "Assets", items: assets },
   ].filter((section) => section.items.length > 0);
 
-  return renderIndexPage({
-    themeDir,
-    assetPrefix,
+  const document = {
     title:
       normalizedMountedPath === "/"
         ? "Content Index"
@@ -259,10 +348,15 @@ async function renderDirectoryIndex({ directoryPath, mountedPath, themeDir, asse
       { label: "Assets", value: String(assets.length) },
     ],
     sections,
-  });
+  };
+
+  return {
+    ...document,
+    contentHash: hashJson(document),
+  };
 }
 
-async function renderMountIndex({ mounts, themeDir, assetPrefix }) {
+function buildMountIndexDocument({ mounts, appName }) {
   const sections = [
     {
       id: "paths",
@@ -276,15 +370,18 @@ async function renderMountIndex({ mounts, themeDir, assetPrefix }) {
     },
   ].filter((section) => section.items.length > 0);
 
-  return renderIndexPage({
-    themeDir,
-    assetPrefix,
+  const document = {
     title: "Published Content",
-    summary: "Configured source paths available through markdownvibe.",
+    summary: `Configured source paths available through ${appName}.`,
     sourcePath: "/",
     metadata: [{ label: "Mounts", value: String(mounts.length) }],
     sections,
-  });
+  };
+
+  return {
+    ...document,
+    contentHash: hashJson(document),
+  };
 }
 
 function resolveSourceFsPath(sourceRoot, requestPath) {
@@ -343,44 +440,48 @@ async function writeAtomically(targetPath, contents) {
   await rename(tempPath, targetPath);
 }
 
-async function getRendererFreshness(themeDir, extraPaths = []) {
-  const values = await Promise.all([
-    maxMtimeMs(themeDir),
-    maxFileMtimeMs([...rendererDependencyPaths, ...extraPaths]),
-  ]);
-
-  return Math.max(...values);
-}
-
 async function generateMarkdownHtmlIfNeeded({
   markdownPath,
   htmlPath,
   mount,
   themeDir,
   assetPrefix,
+  appName,
 }) {
-  const [markdownStat, htmlStat, freshness] = await Promise.all([
-    statPath(markdownPath),
-    statPath(htmlPath),
-    getRendererFreshness(themeDir),
-  ]);
+  const markdownStat = await statPath(markdownPath);
 
   if (!markdownStat?.isFile()) {
     return null;
   }
 
+  const [markdownSource, themeHash, existingHashes] = await Promise.all([
+    readFile(markdownPath, "utf8"),
+    getThemeHash({ themeDir, appName, assetPrefix }),
+    readEmbeddedHashes(htmlPath),
+  ]);
+  const markdownHash = hashString(markdownSource);
   const shouldRender =
-    !htmlStat?.isFile() ||
-    markdownStat.mtimeMs > htmlStat.mtimeMs ||
-    freshness > htmlStat.mtimeMs;
+    !existingHashes ||
+    existingHashes.markdownHash !== markdownHash ||
+    existingHashes.themeHash !== themeHash;
 
   if (shouldRender) {
     const relativeSourcePath = path.relative(mount.fullPath, markdownPath).replace(/\\/g, "/");
     const document = await renderMarkdownDocument({
       markdownPath,
       sourcePath: joinMountedWebPath(mount, relativeSourcePath),
+      markdownSource,
     });
-    const html = await renderPage({ themeDir, assetPrefix, document });
+    const html = await renderPage({
+      themeDir,
+      assetPrefix,
+      appName,
+      hashes: {
+        markdownHash,
+        themeHash,
+      },
+      document,
+    });
     await writeAtomically(htmlPath, html);
   }
 
@@ -393,21 +494,32 @@ async function generateDirectoryIndexIfNeeded({
   mountedPath,
   config,
 }) {
-  const [directoryStat, htmlStat, freshness] = await Promise.all([
-    maxMtimeMs(directoryPath),
-    statPath(htmlPath),
-    getRendererFreshness(config.themeDir),
+  const [document, themeHash, existingHashes] = await Promise.all([
+    buildDirectoryIndexDocument({ directoryPath, mountedPath }),
+    getThemeHash({
+      themeDir: config.themeDir,
+      appName: config.appName,
+      assetPrefix: config.assetPrefix,
+    }),
+    readEmbeddedHashes(htmlPath),
   ]);
-
   const shouldRender =
-    !htmlStat?.isFile() || directoryStat > htmlStat.mtimeMs || freshness > htmlStat.mtimeMs;
+    !existingHashes ||
+    existingHashes.markdownHash !== document.contentHash ||
+    existingHashes.themeHash !== themeHash;
 
   if (shouldRender) {
-    const html = await renderDirectoryIndex({
-      directoryPath,
-      mountedPath,
+    const html = await renderIndexPage({
+      appName: config.appName,
       themeDir: config.themeDir,
       assetPrefix: config.assetPrefix,
+      contentHash: document.contentHash,
+      themeHash,
+      title: document.title,
+      summary: document.summary,
+      sourcePath: document.sourcePath,
+      metadata: document.metadata,
+      sections: document.sections,
     });
     await writeAtomically(htmlPath, html);
   }
@@ -417,19 +529,32 @@ async function generateDirectoryIndexIfNeeded({
 
 async function generateMountIndexIfNeeded(config) {
   const htmlPath = buildSiteIndexOutputPath(config.outputRoot);
-  const configFreshness = config.configPath ? await maxMtimeMs(config.configPath) : 0;
-  const htmlStat = await statPath(htmlPath);
-  const freshness = await getRendererFreshness(config.themeDir, config.configPath ? [config.configPath] : []);
+  const [document, themeHash, existingHashes] = await Promise.all([
+    Promise.resolve(buildMountIndexDocument({ mounts: config.mounts, appName: config.appName })),
+    getThemeHash({
+      themeDir: config.themeDir,
+      appName: config.appName,
+      assetPrefix: config.assetPrefix,
+    }),
+    readEmbeddedHashes(htmlPath),
+  ]);
   const shouldRender =
-    !htmlStat?.isFile() ||
-    configFreshness > htmlStat.mtimeMs ||
-    freshness > htmlStat.mtimeMs;
+    !existingHashes ||
+    existingHashes.markdownHash !== document.contentHash ||
+    existingHashes.themeHash !== themeHash;
 
   if (shouldRender) {
-    const html = await renderMountIndex({
-      mounts: config.mounts,
+    const html = await renderIndexPage({
+      appName: config.appName,
       themeDir: config.themeDir,
       assetPrefix: config.assetPrefix,
+      contentHash: document.contentHash,
+      themeHash,
+      title: document.title,
+      summary: document.summary,
+      sourcePath: document.sourcePath,
+      metadata: document.metadata,
+      sections: document.sections,
     });
     await writeAtomically(htmlPath, html);
   }
@@ -455,6 +580,7 @@ async function sendDirectoryResponse({ directoryPath, requestPath, mount, res, c
       mount,
       themeDir: config.themeDir,
       assetPrefix: config.assetPrefix,
+      appName: config.appName,
     });
     return res.sendFile(renderedHtmlPath);
   }
@@ -539,6 +665,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
         mount,
         themeDir: config.themeDir,
         assetPrefix: config.assetPrefix,
+        appName: config.appName,
       });
 
       if (renderedHtmlPath) {
@@ -591,6 +718,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
       mount,
       themeDir: config.themeDir,
       assetPrefix: config.assetPrefix,
+      appName: config.appName,
     });
 
     if (renderedHtmlPath) {
@@ -665,7 +793,7 @@ export async function startServer(overrides = {}) {
   return new Promise((resolve) => {
     const server = app.listen(config.port, config.host, () => {
       console.log(
-        `markdownvibe listening on http://${config.host}:${config.port} using output cache ${config.outputRoot}`,
+        `${config.appName} listening on http://${config.host}:${config.port} using output cache ${config.outputRoot}`,
       );
       resolve(server);
     });

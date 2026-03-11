@@ -1,3 +1,69 @@
+const themeStorageKey = "markdownvibe-theme";
+const themeChoices = ["auto", "day", "night"];
+
+function normalizeThemePreference(value) {
+  return themeChoices.includes(value) ? value : "auto";
+}
+
+function resolveTheme(preference) {
+  if (preference !== "auto") {
+    return preference;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+}
+
+function applyTheme(preference, { persist = false } = {}) {
+  const normalizedPreference = normalizeThemePreference(preference);
+  const resolvedTheme = resolveTheme(normalizedPreference);
+  const root = document.documentElement;
+
+  root.dataset.themePreference = normalizedPreference;
+  root.dataset.resolvedTheme = resolvedTheme;
+
+  for (const button of document.querySelectorAll("[data-theme-choice]")) {
+    const isActive = button.dataset.themeChoice === normalizedPreference;
+    button.setAttribute("aria-pressed", String(isActive));
+    button.classList.toggle("is-active", isActive);
+  }
+
+  if (persist) {
+    window.localStorage.setItem(themeStorageKey, normalizedPreference);
+  }
+}
+
+function initTheme() {
+  const buttons = Array.from(document.querySelectorAll("[data-theme-choice]"));
+  if (buttons.length === 0) {
+    return;
+  }
+
+  const storedPreference = normalizeThemePreference(
+    document.documentElement.dataset.themePreference ?? window.localStorage.getItem(themeStorageKey),
+  );
+  applyTheme(storedPreference);
+
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      applyTheme(button.dataset.themeChoice, { persist: true });
+      button.closest("[data-mobile-menu]")?.removeAttribute("open");
+    });
+  }
+
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const syncAutoTheme = () => {
+    if (normalizeThemePreference(document.documentElement.dataset.themePreference) === "auto") {
+      applyTheme("auto");
+    }
+  };
+
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", syncAutoTheme);
+  } else if (typeof mediaQuery.addListener === "function") {
+    mediaQuery.addListener(syncAutoTheme);
+  }
+}
+
 function initToc() {
   const toggle = document.querySelector("[data-toc-toggle]");
   const closeButton = document.querySelector("[data-toc-close]");
@@ -35,7 +101,7 @@ function initToc() {
 
   for (const link of tocLinks) {
     link.addEventListener("click", () => {
-      if (window.matchMedia("(max-width: 1099px)").matches) {
+      if (window.matchMedia("(max-width: 959px)").matches) {
         setOpenState(false);
       }
     });
@@ -72,7 +138,15 @@ function initToc() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initToc, { once: true });
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      initTheme();
+      initToc();
+    },
+    { once: true },
+  );
 } else {
+  initTheme();
   initToc();
 }

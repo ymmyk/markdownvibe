@@ -10,7 +10,7 @@
 - Non-Markdown assets are served directly.
 - Exact folder matches win over sibling `foo.md` documents on extensionless routes.
 - Directory routes use `index.md` / `index.html`, or a generated folder index if neither exists.
-- Cached HTML is refreshed when the Markdown source, active theme, or renderer code changes.
+- Cached HTML is refreshed when embedded `markdown-hash` or `theme-hash` metadata no longer matches the current source/render inputs.
 
 ## Run
 
@@ -36,12 +36,14 @@ research.internal {
 If no config file is present, the server falls back to hard-coded defaults:
 
 - port `5123`
+- app name `markdownvibe`
 - output dir `./output`
 - theme dir `./theme/default`
 - a root mount for `./content` when that folder exists
 
 ```yaml
 port: 5123
+app_name: markdownvibe
 output_dir: ./output
 theme_dir: ./theme/default
 paths:
@@ -50,16 +52,21 @@ paths:
 ```
 
 - `port` defaults to `5123`.
+- `app_name` defaults to `markdownvibe` and controls the top-right app label.
 - `output_dir` defaults to `./output`.
 - `theme_dir` defaults to `./theme/default`.
 - `paths[].full_path` may be absolute or relative to the config file.
 - `paths[].web_path` becomes the URL prefix. Use `""` or `/` to mount at the site root.
+
+The default theme also includes an `Auto` / `Day` / `Night` switcher. On desktop it stays in the top-right bar; on mobile it moves into the top-right menu.
 
 If you configure only non-root mounts, `/` shows an index of the published mount paths.
 
 ## Content And Output
 
 Source content is read in place and left unchanged. Generated HTML is written under `output/`, mirroring mount names and document paths.
+
+Generated HTML includes embedded `markdown-hash` and `theme-hash` metadata so cache validation is based on source/render fingerprints instead of filesystem mtimes.
 
 - Example: `content/alpha.md` mounted at root becomes `output/_root/alpha.html`.
 - Example: `/full/path/research` mounted at `my-files` writes cache files under `output/my-files/`.

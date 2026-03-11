@@ -114,6 +114,12 @@ export function loadConfig(overrides = {}) {
     configPath,
     host: overrides.host ?? fileConfig.host ?? process.env.HOST ?? "0.0.0.0",
     port: Number(overrides.port ?? fileConfig.port ?? process.env.PORT ?? 5123),
+    appName:
+      overrides.appName ??
+      fileConfig.app_name ??
+      fileConfig.appName ??
+      process.env.MARKDOWNVIBE_APP_NAME ??
+      "markdownvibe",
     assetPrefix: overrides.assetPrefix ?? fileConfig.asset_prefix ?? fileConfig.assetPrefix ?? "/_markdownvibe",
     themeDir: path.resolve(
       configBaseDir,
