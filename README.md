@@ -2,6 +2,10 @@
 
 `markdownvibe` is a small file-backed web service for AI-authored research docs. The bot writes Markdown. The service handles mounted content paths, extensionless routes, raw Markdown passthrough, and cached HTML generation under `output/`.
 
+## Screenshot
+
+![markdownvibe screenshot](content/screenshot.png)
+
 ## Behavior
 
 - `GET /mount/foo.md` returns the raw Markdown file from the configured source path.

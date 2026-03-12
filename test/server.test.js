@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   access,
+  copyFile,
   mkdtemp,
   mkdir,
   readFile,
@@ -68,6 +69,7 @@ The first version.
   await writeFile(path.join(contentRoot, "mixed", "child.md"), "# Child\n\nFolder wins.\n", "utf8");
 
   await writeFile(path.join(contentRoot, "note.txt"), "passthrough", "utf8");
+  await copyFile(path.resolve("content/screenshot.png"), path.join(contentRoot, "screenshot.png"));
   await writeFile(
     path.join(contentRoot, "title-source.md"),
     `---
@@ -79,6 +81,17 @@ title: Metadata Title
 ## Notes
 
 The browser title should use the H1.
+`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(contentRoot, "table-demo.md"),
+    `# Table Demo
+
+| Column A | Column B | Column C |
+| --- | --- | --- |
+| one | two | three |
+| alpha | beta | gamma |
 `,
     "utf8",
   );
@@ -168,6 +181,15 @@ test("static files are served directly from the source mount", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.text, "passthrough");
+});
+
+test("image assets from the content tree are served directly", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/screenshot.png");
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers["content-type"], /image\/png/);
+  assert.ok(response.body.length > 0);
 });
 
 test("directory routes resolve index markdown and cache in output", async () => {
@@ -316,4 +338,39 @@ test("html title follows the first document h1 when present", async () => {
   assert.equal(response.status, 200);
   assert.match(response.text, /<title>Document Heading<\/title>/);
   assert.match(response.text, /<h1>Metadata Title<\/h1>/);
+});
+
+test("markdown tables render inside their own horizontal scroll container", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/table-demo");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /<div class="table-scroll"><table>/);
+  assert.match(response.text, /<th>Column A<\/th>/);
+});
+
+test("highlight theme uses shared variables so day and night mode stay legible", async () => {
+  const [highlightCss, themeCss] = await Promise.all([
+    readFile(path.join(themeDir, "highlight.css"), "utf8"),
+    readFile(path.join(themeDir, "theme.css"), "utf8"),
+  ]);
+
+  assert.match(highlightCss, /color:\s*var\(--hljs-plain\)/);
+  assert.match(highlightCss, /color:\s*var\(--hljs-comment\)/);
+  assert.match(themeCss, /--hljs-plain:/);
+  assert.match(themeCss, /:root\[data-resolved-theme="night"\]/);
+});
+
+test("desktop theme uses a full-width split layout with text-only measure", async () => {
+  const themeCss = await readFile(path.join(themeDir, "theme.css"), "utf8");
+
+  assert.match(themeCss, /--sidebar-width:/);
+  assert.match(themeCss, /--content-measure:/);
+  assert.match(themeCss, /grid-template-columns:\s*var\(--sidebar-width\) minmax\(0, 1fr\)/);
+  assert.match(themeCss, /\.document > :is\(\.eyebrow, h1, \.deck, \.meta-strip\),/);
+  assert.match(themeCss, /\.prose > :not\(pre\):not\(table\):not\(\.table-scroll\)/);
+  assert.match(themeCss, /\.table-scroll\s*\{/);
+  assert.match(themeCss, /\.document\s*\{[^}]*overflow-x:\s*hidden;/s);
+  assert.match(themeCss, /\.prose th,\s*\.prose td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(themeCss, /\.prose th code,\s*\.prose td code\s*\{[^}]*white-space:\s*normal;/s);
 });

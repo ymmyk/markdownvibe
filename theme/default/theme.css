@@ -1,5 +1,7 @@
 :root {
   --max: 1440px;
+  --sidebar-width: 20.5rem;
+  --content-measure: 72rem;
   --toolbar-icon-size: 2.65rem;
   --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   --font-serif: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", serif;
@@ -31,6 +33,12 @@
   --link: #8a6211;
   --code-bg: #eef3f9;
   --code-inline: rgba(41, 62, 89, 0.08);
+  --hljs-plain: #243347;
+  --hljs-comment: #6f8094;
+  --hljs-keyword: #9c6a08;
+  --hljs-title: #0f6d94;
+  --hljs-string: #2f7a42;
+  --hljs-number: #b85d2d;
   --shadow: 0 28px 60px rgba(31, 44, 62, 0.12);
   --shadow-panel: 0 22px 48px rgba(31, 44, 62, 0.14);
   --scrim: rgba(21, 31, 44, 0.38);
@@ -59,6 +67,12 @@
   --link: #f3c658;
   --code-bg: #0f1d31;
   --code-inline: rgba(255, 255, 255, 0.06);
+  --hljs-plain: #ebf1ff;
+  --hljs-comment: #7f90a8;
+  --hljs-keyword: #f2c35d;
+  --hljs-title: #8fd3ff;
+  --hljs-string: #a4d68b;
+  --hljs-number: #ffae87;
   --shadow: 0 28px 60px rgba(0, 0, 0, 0.35);
   --shadow-panel: 0 24px 56px rgba(0, 0, 0, 0.38);
   --scrim: rgba(2, 5, 11, 0.6);
@@ -88,6 +102,12 @@
     --link: #f3c658;
     --code-bg: #0f1d31;
     --code-inline: rgba(255, 255, 255, 0.06);
+    --hljs-plain: #ebf1ff;
+    --hljs-comment: #7f90a8;
+    --hljs-keyword: #f2c35d;
+    --hljs-title: #8fd3ff;
+    --hljs-string: #a4d68b;
+    --hljs-number: #ffae87;
     --shadow: 0 28px 60px rgba(0, 0, 0, 0.35);
     --shadow-panel: 0 24px 56px rgba(0, 0, 0, 0.38);
     --scrim: rgba(2, 5, 11, 0.6);
@@ -106,10 +126,7 @@ html {
 body {
   margin: 0;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, var(--page-glow-a), transparent 22%),
-    radial-gradient(circle at bottom right, var(--page-glow-b), transparent 30%),
-    linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+  background: var(--page-top);
   font-family: var(--font-sans);
   transition:
     color var(--transition-theme),
@@ -122,7 +139,7 @@ a {
 
 .shell {
   min-height: 100vh;
-  background: linear-gradient(180deg, transparent, var(--shell-bg));
+  background: none;
 }
 
 .topbar {
@@ -357,11 +374,17 @@ a {
 
 .document {
   min-width: 0;
+  overflow-x: hidden;
   padding: clamp(1.5rem, 2vw, 2.5rem);
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
   background: linear-gradient(180deg, var(--surface), var(--surface-strong));
   box-shadow: var(--shadow);
+}
+
+.document > :is(.eyebrow, h1, .deck, .meta-strip),
+.prose > :not(pre):not(table):not(.table-scroll) {
+  max-width: var(--content-measure);
 }
 
 .eyebrow {
@@ -496,10 +519,19 @@ a {
   background: transparent;
 }
 
-.prose table {
-  width: 100%;
-  border-collapse: collapse;
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
   margin: 1.5rem 0;
+  padding-bottom: 0.15rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.prose table {
+  width: max(100%, 52rem);
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 0;
 }
 
 .prose th,
@@ -507,6 +539,18 @@ a {
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--line);
   text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+}
+
+.prose th code,
+.prose td code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .prose th {
@@ -696,19 +740,35 @@ a {
   }
 
   .layout {
-    grid-template-columns: 320px minmax(0, 1fr);
-    gap: 1.75rem;
-    padding-top: 2rem;
+    width: 100%;
+    margin: 0;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    min-height: calc(100vh - 5.4rem);
+    background:
+      linear-gradient(
+        90deg,
+        var(--surface-panel) 0,
+        var(--surface-panel) var(--sidebar-width),
+        var(--surface) var(--sidebar-width),
+        var(--surface) 100%
+      );
   }
 
   .toc-panel {
     position: sticky;
     top: 5.4rem;
     width: auto;
-    height: calc(100vh - 6.6rem);
+    height: calc(100vh - 5.4rem);
     transform: none;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-panel);
+    padding: 1.5rem 1.2rem 2rem;
+    border: 0;
+    border-right: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface-panel);
+    box-shadow: none;
+    z-index: 1;
   }
 
   .toc-close,
@@ -718,7 +778,17 @@ a {
   }
 
   .toc-nav {
-    height: calc(100vh - 12rem);
+    height: calc(100vh - 8rem);
+  }
+
+  .document {
+    min-height: calc(100vh - 5.4rem);
+    padding: 2rem clamp(1.5rem, 3vw, 3rem) 3rem;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 }
 

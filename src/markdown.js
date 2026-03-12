@@ -19,6 +19,21 @@ const markdown = new MarkdownIt({
   },
 });
 
+const defaultTableOpen =
+  markdown.renderer.rules.table_open ??
+  ((tokens, index, options, environment, self) =>
+    self.renderToken(tokens, index, options, environment, self));
+const defaultTableClose =
+  markdown.renderer.rules.table_close ??
+  ((tokens, index, options, environment, self) =>
+    self.renderToken(tokens, index, options, environment, self));
+
+markdown.renderer.rules.table_open = (tokens, index, options, environment, self) =>
+  `<div class="table-scroll">${defaultTableOpen(tokens, index, options, environment, self)}`;
+
+markdown.renderer.rules.table_close = (tokens, index, options, environment, self) =>
+  `${defaultTableClose(tokens, index, options, environment, self)}</div>`;
+
 function slugify(value) {
   const slug = value
     .toLowerCase()
