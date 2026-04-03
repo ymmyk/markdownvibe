@@ -13,7 +13,10 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
-import { renderMarkdownDocument } from "./markdown.js";
+import {
+  getTaskListItemsFromMarkdownSource,
+  renderMarkdownDocument,
+} from "./markdown.js";
 import { renderPage } from "./template.js";
 
 const rendererDependencyPaths = [
@@ -21,6 +24,8 @@ const rendererDependencyPaths = [
   fileURLToPath(new URL("./markdown.js", import.meta.url)),
   fileURLToPath(new URL("./template.js", import.meta.url)),
 ];
+const taskToggleRoute = "/__markdownvibe/tasks/toggle";
+const taskListLinePattern = /^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)([ xX])(\])/;
 
 function ensureInsideRoot(root, targetPath) {
   const relative = path.relative(root, targetPath);
@@ -107,6 +112,141 @@ function hashJson(value) {
   return hashString(JSON.stringify(value));
 }
 
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function getLineRange(source, lineNumber) {
+  if (!Number.isInteger(lineNumber) || lineNumber < 0) {
+    return null;
+  }
+
+  let currentLine = 0;
+  let lineStart = 0;
+
+  while (currentLine < lineNumber && lineStart < source.length) {
+    const nextLineFeed = source.indexOf("\n", lineStart);
+    const nextCarriageReturn = source.indexOf("\r", lineStart);
+    let lineBreakIndex = -1;
+    let lineBreakLength = 1;
+
+    if (nextLineFeed === -1) {
+      lineBreakIndex = nextCarriageReturn;
+    } else if (nextCarriageReturn === -1) {
+      lineBreakIndex = nextLineFeed;
+    } else {
+      lineBreakIndex = Math.min(nextLineFeed, nextCarriageReturn);
+    }
+
+    if (lineBreakIndex === -1) {
+      return null;
+    }
+
+    if (source[lineBreakIndex] === "\r" && source[lineBreakIndex + 1] === "\n") {
+      lineBreakLength = 2;
+    }
+
+    lineStart = lineBreakIndex + lineBreakLength;
+    currentLine += 1;
+  }
+
+  if (currentLine !== lineNumber) {
+    return null;
+  }
+
+  let lineEnd = lineStart;
+  while (lineEnd < source.length && source[lineEnd] !== "\n" && source[lineEnd] !== "\r") {
+    lineEnd += 1;
+  }
+
+  return { start: lineStart, end: lineEnd };
+}
+
+function updateTaskMarkerInLine(line, checked) {
+  const nextMarker = checked ? "x" : " ";
+  return line.replace(taskListLinePattern, (_match, prefix, _marker, suffix) =>
+    `${prefix}${nextMarker}${suffix}`,
+  );
+}
+
+async function toggleMarkdownTask({
+  sourcePath,
+  taskIndex,
+  checked,
+  markdownHash,
+  config,
+}) {
+  if (typeof sourcePath !== "string" || sourcePath.length === 0) {
+    throw createHttpError(400, "A markdown source path is required.");
+  }
+
+  if (!Number.isInteger(taskIndex) || taskIndex < 0) {
+    throw createHttpError(400, "A valid task index is required.");
+  }
+
+  if (typeof checked !== "boolean") {
+    throw createHttpError(400, "A checked state is required.");
+  }
+
+  if (markdownHash !== undefined && typeof markdownHash !== "string") {
+    throw createHttpError(400, "The markdown hash must be a string.");
+  }
+
+  const normalizedSourcePath = normalizeRequestPath(sourcePath);
+  const match = matchMount(config.mounts, normalizedSourcePath);
+  if (!match) {
+    throw createHttpError(404, "Markdown file not found.");
+  }
+
+  const markdownPath = resolveSourceFsPath(match.mount.fullPath, match.relativeRequestPath);
+  if (path.extname(markdownPath).toLowerCase() !== ".md") {
+    throw createHttpError(400, "Only markdown files can be updated.");
+  }
+
+  const markdownStat = await statPath(markdownPath);
+  if (!markdownStat?.isFile()) {
+    throw createHttpError(404, "Markdown file not found.");
+  }
+
+  const markdownSource = await readFile(markdownPath, "utf8");
+  const currentMarkdownHash = hashString(markdownSource);
+  if (markdownHash && currentMarkdownHash !== markdownHash) {
+    throw createHttpError(409, "This page is out of date. Reload and try again.");
+  }
+
+  const tasks = getTaskListItemsFromMarkdownSource(markdownSource);
+  const task = tasks.find((item) => item.index === taskIndex);
+  if (!task || task.line === null) {
+    throw createHttpError(404, "Checklist item not found.");
+  }
+
+  const lineRange = getLineRange(markdownSource, task.line);
+  if (!lineRange) {
+    throw createHttpError(409, "Checklist item could not be located.");
+  }
+
+  const line = markdownSource.slice(lineRange.start, lineRange.end);
+  if (!taskListLinePattern.test(line)) {
+    throw createHttpError(409, "Checklist item could not be updated.");
+  }
+
+  const nextLine = updateTaskMarkerInLine(line, checked);
+  const nextSource =
+    nextLine === line
+      ? markdownSource
+      : `${markdownSource.slice(0, lineRange.start)}${nextLine}${markdownSource.slice(lineRange.end)}`;
+
+  if (nextSource !== markdownSource) {
+    await writeAtomically(markdownPath, nextSource);
+  }
+
+  return {
+    markdownHash: hashString(nextSource),
+  };
+}
+
 async function listFilesRecursively(rootPath, currentPath = rootPath) {
   const entries = await readdir(currentPath, { withFileTypes: true });
   const sortedEntries = entries.sort((left, right) => left.name.localeCompare(right.name));
@@ -170,12 +310,21 @@ async function readEmbeddedHashes(htmlPath) {
   try {
     const html = await readFile(htmlPath, "utf8");
     return {
+      html,
       markdownHash: extractMetaValue(html, "markdown-hash"),
       themeHash: extractMetaValue(html, "theme-hash"),
     };
   } catch {
     return null;
   }
+}
+
+function markdownContainsTaskList(source) {
+  return /(?:^|\r?\n)\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[[ xX]\]\s+/m.test(source);
+}
+
+function htmlNeedsTaskListUpgrade(markdownSource, html) {
+  return markdownContainsTaskList(markdownSource) && !html.includes("data-task-checkbox");
 }
 
 function renderIndexToc(sections) {
@@ -261,7 +410,32 @@ async function renderIndexPage({
   });
 }
 
-async function buildDirectoryIndexDocument({ directoryPath, mountedPath }) {
+function buildConfiguredMountSection(mounts, currentMountedPath) {
+  if (currentMountedPath !== "/") {
+    return null;
+  }
+
+  const items = mounts
+    .filter((mount) => mount.webPath !== "/")
+    .map((mount) => ({
+      label: mount.webPath,
+      kind: "Mount",
+      href: mount.webPath,
+      detail: mount.fullPath,
+    }));
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return {
+    id: "configured-paths",
+    title: "Configured Paths",
+    items,
+  };
+}
+
+async function buildDirectoryIndexDocument({ directoryPath, mountedPath, mounts = [] }) {
   const normalizedMountedPath =
     mountedPath === "/" ? "/" : mountedPath.endsWith("/") ? mountedPath : `${mountedPath}/`;
   const entries = (await readdir(directoryPath, { withFileTypes: true }))
@@ -328,11 +502,13 @@ async function buildDirectoryIndexDocument({ directoryPath, mountedPath }) {
     });
   }
 
+  const configuredMountSection = buildConfiguredMountSection(mounts, normalizedMountedPath);
   const sections = [
+    configuredMountSection,
     { id: "folders", title: "Folders", items: folders },
     { id: "pages", title: "Pages", items: pages },
     { id: "assets", title: "Assets", items: assets },
-  ].filter((section) => section.items.length > 0);
+  ].filter((section) => section && section.items.length > 0);
 
   const document = {
     title:
@@ -343,6 +519,7 @@ async function buildDirectoryIndexDocument({ directoryPath, mountedPath }) {
     sourcePath: normalizedMountedPath,
     metadata: [
       { label: "Mode", value: "Auto index" },
+      { label: "Mounts", value: String(configuredMountSection?.items.length ?? 0) },
       { label: "Folders", value: String(folders.length) },
       { label: "Pages", value: String(pages.length) },
       { label: "Assets", value: String(assets.length) },
@@ -356,7 +533,50 @@ async function buildDirectoryIndexDocument({ directoryPath, mountedPath }) {
   };
 }
 
-function buildMountIndexDocument({ mounts, appName }) {
+async function collectMountDirectories(mount, currentPath = mount.fullPath, relativePath = "") {
+  const entries = (await readdir(currentPath, { withFileTypes: true }))
+    .filter((entry) => !entry.name.startsWith("."))
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }),
+    );
+  const directories = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const nextRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+    directories.push({
+      label: `${nextRelativePath}/`,
+      kind: "Folder",
+      href: `${joinMountedWebPath(mount, nextRelativePath)}/`,
+      detail: path.join(mount.fullPath, nextRelativePath),
+    });
+    directories.push(...(await collectMountDirectories(mount, path.join(currentPath, entry.name), nextRelativePath)));
+  }
+
+  return directories;
+}
+
+async function buildMountIndexDocument({ mounts, appName }) {
+  const directorySections = await Promise.all(
+    mounts.map(async (mount) => {
+      const directories = await collectMountDirectories(mount);
+      if (directories.length === 0) {
+        return null;
+      }
+
+      return {
+        id: `directories-${mount.cacheKey.replaceAll(path.sep, "-")}`,
+        title:
+          mount.webPath === "/"
+            ? "Root Directories"
+            : `Directories In ${mount.webPath}`,
+        items: directories,
+      };
+    }),
+  );
   const sections = [
     {
       id: "paths",
@@ -368,13 +588,21 @@ function buildMountIndexDocument({ mounts, appName }) {
         detail: mount.fullPath,
       })),
     },
+    ...directorySections.filter(Boolean),
   ].filter((section) => section.items.length > 0);
+  const directoryCount = directorySections.reduce(
+    (count, section) => count + (section?.items.length ?? 0),
+    0,
+  );
 
   const document = {
     title: "Published Content",
     summary: `Configured source paths available through ${appName}.`,
     sourcePath: "/",
-    metadata: [{ label: "Mounts", value: String(mounts.length) }],
+    metadata: [
+      { label: "Mounts", value: String(mounts.length) },
+      { label: "Directories", value: String(directoryCount) },
+    ],
     sections,
   };
 
@@ -463,7 +691,8 @@ async function generateMarkdownHtmlIfNeeded({
   const shouldRender =
     !existingHashes ||
     existingHashes.markdownHash !== markdownHash ||
-    existingHashes.themeHash !== themeHash;
+    existingHashes.themeHash !== themeHash ||
+    htmlNeedsTaskListUpgrade(markdownSource, existingHashes.html);
 
   if (shouldRender) {
     const relativeSourcePath = path.relative(mount.fullPath, markdownPath).replace(/\\/g, "/");
@@ -495,7 +724,7 @@ async function generateDirectoryIndexIfNeeded({
   config,
 }) {
   const [document, themeHash, existingHashes] = await Promise.all([
-    buildDirectoryIndexDocument({ directoryPath, mountedPath }),
+    buildDirectoryIndexDocument({ directoryPath, mountedPath, mounts: config.mounts }),
     getThemeHash({
       themeDir: config.themeDir,
       appName: config.appName,
@@ -530,7 +759,7 @@ async function generateDirectoryIndexIfNeeded({
 async function generateMountIndexIfNeeded(config) {
   const htmlPath = buildSiteIndexOutputPath(config.outputRoot);
   const [document, themeHash, existingHashes] = await Promise.all([
-    Promise.resolve(buildMountIndexDocument({ mounts: config.mounts, appName: config.appName })),
+    buildMountIndexDocument({ mounts: config.mounts, appName: config.appName }),
     getThemeHash({
       themeDir: config.themeDir,
       appName: config.appName,
@@ -735,6 +964,7 @@ export function createApp(overrides = {}) {
 
   app.disable("x-powered-by");
   app.set("trust proxy", true);
+  app.use(express.json({ limit: "16kb" }));
   app.get("/favicon.ico", (_req, res) => {
     res.sendFile(path.join(config.themeDir, "favicon.svg"));
   });
@@ -746,6 +976,20 @@ export function createApp(overrides = {}) {
       maxAge: "5m",
     }),
   );
+  app.post(taskToggleRoute, async (req, res, next) => {
+    try {
+      const result = await toggleMarkdownTask({
+        sourcePath: req.body?.sourcePath,
+        taskIndex: req.body?.taskIndex,
+        checked: req.body?.checked,
+        markdownHash: req.body?.markdownHash,
+        config,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get(/.*/, async (req, res, next) => {
     try {

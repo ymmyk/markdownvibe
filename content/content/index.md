@@ -42,4 +42,6 @@ export function ideaScore(signal, conviction) {
 
 ## Next Step
 
+- [ ] Add the next research page.
+
 Create more files under `content/` and request them as `/path`, `/path.html`, or `/path.md`.

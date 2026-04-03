@@ -1,5 +1,6 @@
 const themeStorageKey = "markdownvibe-theme";
 const themeChoices = ["auto", "day", "night"];
+const taskToggleEndpoint = "/__markdownvibe/tasks/toggle";
 
 function normalizeThemePreference(value) {
   return themeChoices.includes(value) ? value : "auto";
@@ -137,16 +138,90 @@ function initToc() {
   }
 }
 
+function initTaskCheckboxes() {
+  const article = document.querySelector(".prose[data-source-path]");
+  const checkboxes = Array.from(article?.querySelectorAll("[data-task-checkbox]") ?? []);
+  if (!article || checkboxes.length === 0) {
+    return;
+  }
+
+  const sourcePath = article.dataset.sourcePath;
+  const markdownHashTag = document.querySelector('meta[name="markdown-hash"]');
+  let markdownHash = markdownHashTag?.getAttribute("content") ?? "";
+  let isBusy = false;
+
+  const setBusyState = (nextBusy) => {
+    isBusy = nextBusy;
+    for (const checkbox of checkboxes) {
+      checkbox.disabled = nextBusy;
+    }
+  };
+
+  for (const checkbox of checkboxes) {
+    checkbox.addEventListener("change", async () => {
+      if (isBusy || !sourcePath) {
+        return;
+      }
+
+      const previousChecked = !checkbox.checked;
+      const taskIndex = Number(checkbox.dataset.taskIndex);
+      if (!Number.isInteger(taskIndex)) {
+        checkbox.checked = previousChecked;
+        return;
+      }
+
+      setBusyState(true);
+
+      try {
+        const response = await fetch(taskToggleEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourcePath,
+            taskIndex,
+            checked: checkbox.checked,
+            markdownHash,
+          }),
+        });
+
+        if (response.status === 409) {
+          window.location.reload();
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        const payload = await response.json();
+        if (typeof payload.markdownHash === "string" && payload.markdownHash.length > 0) {
+          markdownHash = payload.markdownHash;
+          markdownHashTag?.setAttribute("content", markdownHash);
+        }
+      } catch (error) {
+        checkbox.checked = previousChecked;
+        console.error("Unable to update checklist item.", error);
+      } finally {
+        setBusyState(false);
+      }
+    });
+  }
+}
+
 if (document.readyState === "loading") {
   document.addEventListener(
     "DOMContentLoaded",
     () => {
       initTheme();
       initToc();
+      initTaskCheckboxes();
     },
     { once: true },
   );
 } else {
   initTheme();
   initToc();
+  initTaskCheckboxes();
 }

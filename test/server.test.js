@@ -95,6 +95,20 @@ The browser title should use the H1.
 `,
     "utf8",
   );
+  await writeFile(
+    path.join(contentRoot, "tasks.md"),
+    `---
+title: Checklist
+owner: ops
+---
+
+# Checklist
+
+- [ ] Ship **draft**
+- [x] Review results
+`,
+    "utf8",
+  );
 
   return {
     app: createApp({
@@ -147,6 +161,83 @@ test("raw markdown requests pass through unchanged from mounted paths", async ()
   assert.match(response.headers["content-type"], /text\/markdown/);
   assert.match(response.text, /^---/);
   assert.match(response.text, /## Findings/);
+});
+
+test("markdown task lists render as checkable inputs tied to the source path", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/tasks");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /data-source-path="\/docs\/tasks\.md"/);
+  assert.match(response.text, /class="task-list-item"/);
+  assert.match(response.text, /data-task-checkbox/);
+  assert.match(response.text, /data-task-index="0"/);
+  assert.match(response.text, /data-task-index="1"/);
+  assert.match(response.text, /data-task-index="1"[\s\S]*checked/);
+  assert.match(response.text, /task-list-text">Ship <strong>draft<\/strong>/);
+  assert.doesNotMatch(response.text, /\[ \] Ship/);
+});
+
+test("task toggle endpoint updates only the checklist marker in source markdown", async () => {
+  const { app, contentRoot } = await makeFixture();
+  const initialResponse = await request(app).get("/docs/tasks");
+  const initialHash = extractMetaValue(initialResponse.text, "markdown-hash");
+
+  const toggleResponse = await request(app)
+    .post("/__markdownvibe/tasks/toggle")
+    .send({
+      sourcePath: "/docs/tasks.md",
+      taskIndex: 0,
+      checked: true,
+      markdownHash: initialHash,
+    });
+
+  assert.equal(toggleResponse.status, 200);
+  assert.ok(toggleResponse.body.markdownHash);
+
+  const updatedMarkdown = await readFile(path.join(contentRoot, "tasks.md"), "utf8");
+  assert.equal(
+    updatedMarkdown,
+    `---
+title: Checklist
+owner: ops
+---
+
+# Checklist
+
+- [x] Ship **draft**
+- [x] Review results
+`,
+  );
+
+  const renderedResponse = await request(app).get("/docs/tasks");
+  assert.equal(renderedResponse.status, 200);
+  assert.match(renderedResponse.text, /data-task-index="0"[\s\S]*checked/);
+});
+
+test("stale cached task-list html is regenerated even when hashes still match", async () => {
+  const { app, outputRoot } = await makeFixture();
+  const htmlPath = path.join(outputRoot, "docs", "tasks.html");
+
+  const initialResponse = await request(app).get("/docs/tasks");
+  assert.equal(initialResponse.status, 200);
+
+  const generated = await readFile(htmlPath, "utf8");
+  const staleHtml = generated
+    .replace(
+      /<li class="task-list-item" data-task-index="0">[\s\S]*?<\/li>/,
+      "<li>[ ] Ship <strong>draft</strong></li>",
+    )
+    .replace(
+      /<li class="task-list-item" data-task-index="1">[\s\S]*?<\/li>/,
+      "<li>[x] Review results</li>",
+    );
+  await writeFile(htmlPath, staleHtml, "utf8");
+
+  const refreshedResponse = await request(app).get("/docs/tasks");
+  assert.equal(refreshedResponse.status, 200);
+  assert.match(refreshedResponse.text, /data-task-checkbox/);
+  assert.doesNotMatch(refreshedResponse.text, /<li>\[ \] Ship <strong>draft<\/strong><\/li>/);
 });
 
 test("stale embedded theme hashes force html regeneration", async () => {
@@ -232,6 +323,26 @@ test("mount root auto indexes include a parent link to the site root", async () 
   assert.match(response.text, /href="\/">..<\/a>/);
 });
 
+test("root auto indexes expose configured sibling mounts", async () => {
+  const { contentRoot, outputRoot } = await makeFixture();
+  const app = createApp({
+    themeDir,
+    outputRoot,
+    mounts: [
+      { full_path: contentRoot, web_path: "" },
+      { full_path: contentRoot, web_path: "docs" },
+      { full_path: contentRoot, web_path: "notes" },
+    ],
+  });
+  const response = await request(app).get("/");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /Auto-generated directory index for \//);
+  assert.match(response.text, />Configured Paths</);
+  assert.match(response.text, /href="\/docs">\/docs<\/a>/);
+  assert.match(response.text, /href="\/notes">\/notes<\/a>/);
+});
+
 test("html requests can target an exact folder match", async () => {
   const { app } = await makeFixture();
   const response = await request(app).get("/docs/library.html");
@@ -267,9 +378,15 @@ test("root mount index is rendered when no root path is mounted", async () => {
   assert.equal(response.status, 200);
   assert.match(response.text, /Published Content/);
   assert.match(response.text, /href="\/docs"/);
+  assert.match(response.text, /Directories In \/docs/);
+  assert.match(response.text, /href="\/docs\/reports\/"/);
+  assert.match(response.text, /href="\/docs\/library\/"/);
+  assert.match(response.text, /href="\/docs\/library\/archive\/"/);
+  assert.match(response.text, /href="\/docs\/mixed\/"/);
 
   const generated = await readFile(path.join(outputRoot, "_site", "index.html"), "utf8");
   assert.match(generated, /Configured Paths/);
+  assert.match(generated, /Directories In \/docs/);
 });
 
 test("yaml config files define port, output root, and mounted paths", async () => {

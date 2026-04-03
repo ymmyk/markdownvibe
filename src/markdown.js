@@ -19,6 +19,8 @@ const markdown = new MarkdownIt({
   },
 });
 
+const taskListMarkerPattern = /^\[([ xX])\]\s+/;
+
 const defaultTableOpen =
   markdown.renderer.rules.table_open ??
   ((tokens, index, options, environment, self) =>
@@ -27,12 +29,152 @@ const defaultTableClose =
   markdown.renderer.rules.table_close ??
   ((tokens, index, options, environment, self) =>
     self.renderToken(tokens, index, options, environment, self));
+const defaultListItemOpen =
+  markdown.renderer.rules.list_item_open ??
+  ((tokens, index, options, environment, self) =>
+    self.renderToken(tokens, index, options, environment, self));
 
 markdown.renderer.rules.table_open = (tokens, index, options, environment, self) =>
   `<div class="table-scroll">${defaultTableOpen(tokens, index, options, environment, self)}`;
 
 markdown.renderer.rules.table_close = (tokens, index, options, environment, self) =>
   `${defaultTableClose(tokens, index, options, environment, self)}</div>`;
+
+markdown.renderer.rules.list_item_open = (tokens, index, options, environment, self) => {
+  const task = tokens[index].meta?.taskListItem;
+  if (task) {
+    tokens[index].attrJoin("class", "task-list-item");
+    tokens[index].attrSet("data-task-index", String(task.index));
+  }
+
+  return defaultListItemOpen(tokens, index, options, environment, self);
+};
+
+function stripTaskMarker(inlineToken, markerLength) {
+  inlineToken.content = inlineToken.content.slice(markerLength);
+
+  if (!Array.isArray(inlineToken.children)) {
+    return;
+  }
+
+  let remaining = markerLength;
+  const nextChildren = [];
+
+  for (const child of inlineToken.children) {
+    if (remaining === 0 || child.type !== "text") {
+      nextChildren.push(child);
+      continue;
+    }
+
+    if (child.content.length <= remaining) {
+      remaining -= child.content.length;
+      continue;
+    }
+
+    child.content = child.content.slice(remaining);
+    remaining = 0;
+    nextChildren.push(child);
+  }
+
+  inlineToken.children = nextChildren;
+}
+
+function createHtmlInlineToken(inlineToken, content) {
+  const token = new inlineToken.constructor("html_inline", "", 0);
+  token.content = content;
+  token.level = inlineToken.level;
+  token.block = false;
+  return token;
+}
+
+function decorateTaskListInlineToken(inlineToken, task) {
+  const checkedAttribute = task.checked ? " checked" : "";
+  const openingToken = createHtmlInlineToken(
+    inlineToken,
+    `<span class="task-list-control"><input class="task-list-checkbox" type="checkbox" data-task-checkbox data-task-index="${task.index}"${checkedAttribute} /><span class="task-list-text">`,
+  );
+  const closingToken = createHtmlInlineToken(inlineToken, "</span></span>");
+  inlineToken.children = [openingToken, ...(inlineToken.children ?? []), closingToken];
+}
+
+function collectTaskListItems(tokens, { decorate = false } = {}) {
+  const tasks = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== "list_item_open") {
+      continue;
+    }
+
+    let inlineToken = null;
+    for (let nestedIndex = index + 1; nestedIndex < tokens.length; nestedIndex += 1) {
+      const nestedToken = tokens[nestedIndex];
+      if (nestedToken.type === "list_item_close" && nestedToken.level === token.level) {
+        break;
+      }
+
+      if (
+        nestedToken.type === "inline" &&
+        tokens[nestedIndex - 1]?.type === "paragraph_open"
+      ) {
+        inlineToken = nestedToken;
+        break;
+      }
+    }
+
+    if (!inlineToken) {
+      continue;
+    }
+
+    const match = inlineToken.content.match(taskListMarkerPattern);
+    if (!match) {
+      continue;
+    }
+
+    const task = {
+      index: tasks.length,
+      checked: match[1].toLowerCase() === "x",
+      contentLine: inlineToken.map?.[0] ?? token.map?.[0] ?? null,
+    };
+    tasks.push(task);
+
+    if (!decorate) {
+      continue;
+    }
+
+    stripTaskMarker(inlineToken, match[0].length);
+    decorateTaskListInlineToken(inlineToken, task);
+    token.meta = { ...token.meta, taskListItem: task };
+  }
+
+  return tasks;
+}
+
+function countLineBreaks(value) {
+  return (value.match(/\r\n|\r|\n/g) ?? []).length;
+}
+
+function getContentStartIndex(source, content) {
+  if (source.endsWith(content)) {
+    return source.length - content.length;
+  }
+
+  return source.indexOf(content);
+}
+
+export function getTaskListItemsFromMarkdownSource(markdownSource) {
+  const parsed = matter(markdownSource);
+  const contentStartIndex = getContentStartIndex(markdownSource, parsed.content);
+  const lineOffset =
+    contentStartIndex >= 0 ? countLineBreaks(markdownSource.slice(0, contentStartIndex)) : 0;
+  const tokens = markdown.parse(parsed.content, {});
+  const tasks = collectTaskListItems(tokens);
+
+  return tasks.map((task) => ({
+    ...task,
+    line: task.contentLine === null ? null : lineOffset + task.contentLine,
+  }));
+}
 
 function slugify(value) {
   const slug = value
@@ -156,6 +298,7 @@ export async function renderMarkdownDocument({ markdownPath, sourcePath, markdow
   const source = markdownSource ?? (await readFile(markdownPath, "utf8"));
   const parsed = matter(source);
   const tokens = markdown.parse(parsed.content, {});
+  collectTaskListItems(tokens, { decorate: true });
   const headings = collectHeadings(tokens);
   const documentHeading = headings.find((heading) => heading.level === 1)?.text;
   const title =
