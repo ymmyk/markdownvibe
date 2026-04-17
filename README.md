@@ -62,7 +62,13 @@ paths:
 - `paths[].full_path` may be absolute or relative to the config file.
 - `paths[].web_path` becomes the URL prefix. Use `""` or `/` to mount at the site root.
 
-The default theme also includes an `Auto` / `Day` / `Night` switcher. On desktop it stays in the top-right bar; on mobile it moves into the top-right menu.
+The default theme includes:
+
+- an `Auto` / `Day` / `Night` switcher
+- a per-server template dropdown with `Parchment`, `Blueprint`, `Moss`, `Ember`, and `Harbor` profiles
+- a header trail that shows the current origin, clickable path segments, and a raw `.md` download action on rendered markdown pages
+
+The chosen template is stored locally in the browser per origin, so you can give different markdownvibe servers different visual chrome without changing server-side config. On desktop the controls stay in the top-right bar; on mobile they move into the top-right display menu.
 
 If you configure only non-root mounts, `/` shows an index of the published mount paths.
 

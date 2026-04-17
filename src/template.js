@@ -30,6 +30,7 @@ function renderSummary(summary, escapeHtml) {
 export async function renderPage({ themeDir, assetPrefix, appName, hashes, document }) {
   const templatePath = path.join(themeDir, "template.html");
   const template = await readFile(templatePath, "utf8");
+  const rawDownloadPath = document.rawDownloadPath ?? "";
 
   return template
     .replaceAll("{{HTML_TITLE}}", document.escapeHtml(document.htmlTitle ?? document.title))
@@ -42,5 +43,6 @@ export async function renderPage({ themeDir, assetPrefix, appName, hashes, docum
     .replaceAll("{{META}}", renderMeta(document.metadata, document.escapeHtml))
     .replaceAll("{{TOC}}", document.tocHtml)
     .replaceAll("{{CONTENT}}", document.bodyHtml)
+    .replaceAll("{{RAW_DOWNLOAD_PATH}}", document.escapeHtml(rawDownloadPath))
     .replaceAll("{{ASSET_PREFIX}}", assetPrefix);
 }

@@ -13,12 +13,24 @@
           const stored = localStorage.getItem(key);
           const preference =
             stored === "day" || stored === "night" || stored === "auto" ? stored : "auto";
+          const storageScope =
+            window.location.origin && window.location.origin !== "null"
+              ? window.location.origin
+              : window.location.href;
+          const templateKey = `markdownvibe-template:${storageScope}`;
+          const storedTemplate = localStorage.getItem(templateKey);
+          const template = ["parchment", "blueprint", "moss", "ember", "harbor"].includes(
+            storedTemplate,
+          )
+            ? storedTemplate
+            : "parchment";
           const prefersNight =
             window.matchMedia &&
             window.matchMedia("(prefers-color-scheme: dark)").matches;
           const resolved = preference === "auto" ? (prefersNight ? "night" : "day") : preference;
           document.documentElement.dataset.themePreference = preference;
           document.documentElement.dataset.resolvedTheme = resolved;
+          document.documentElement.dataset.templateProfile = template;
         } catch {}
       })();
     </script>
@@ -47,8 +59,53 @@
             <span class="control-label">Contents</span>
           </button>
           <a class="brand" href="/">{{APP_NAME}}</a>
+          <span class="server-chip" aria-label="Current server" data-server-origin>
+            <span class="server-chip-label">Server</span>
+            <a class="server-chip-value" data-server-origin-value href="/">Loading</a>
+          </span>
+          <nav class="pathbar" aria-label="Current path" data-pathbar hidden>
+            <ol class="path-list" data-path-breadcrumbs>
+              <li class="path-item">
+                <span class="path-current">Loading path</span>
+              </li>
+            </ol>
+            <a
+              class="path-download"
+              data-raw-download
+              data-raw-download-path="{{RAW_DOWNLOAD_PATH}}"
+              href="/"
+              hidden
+              download
+              aria-label="Download raw markdown"
+              title="Download raw markdown"
+            >
+              <svg viewBox="0 0 20 20" focusable="false" aria-hidden="true">
+                <path
+                  d="M10 3.75v7.5m0 0 3-3m-3 3-3-3M4.75 13.5v1a.75.75 0 0 0 .75.75h9a.75.75 0 0 0 .75-.75v-1"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                />
+              </svg>
+              <span class="sr-only">Download raw markdown</span>
+            </a>
+          </nav>
         </div>
         <div class="topbar-end">
+          <label class="template-picker" data-template-picker>
+            <span class="template-picker-field">
+              <span class="template-picker-dot" aria-hidden="true"></span>
+              <select class="template-select" data-template-select aria-label="Surface template">
+                <option value="parchment">Parchment · Warm</option>
+                <option value="blueprint">Blueprint · Cool</option>
+                <option value="moss">Moss · Calm</option>
+                <option value="ember">Ember · Bold</option>
+                <option value="harbor">Harbor · Deep</option>
+              </select>
+            </span>
+          </label>
           <div class="theme-switcher theme-switcher-desktop" role="group" aria-label="Color theme">
             <button
               class="theme-option"
@@ -107,10 +164,21 @@
             </button>
           </div>
           <details class="mobile-menu" data-mobile-menu>
-            <summary class="mobile-menu-toggle" aria-label="Open display menu">
-              Theme
-            </summary>
+            <summary class="mobile-menu-toggle" aria-label="Open display menu">Display</summary>
             <div class="mobile-menu-panel">
+              <p class="mobile-menu-label">Template</p>
+              <label class="template-picker template-picker-mobile" data-template-picker>
+                <span class="template-picker-field">
+                  <span class="template-picker-dot" aria-hidden="true"></span>
+                  <select class="template-select" data-template-select aria-label="Surface template">
+                    <option value="parchment">Parchment · Warm</option>
+                    <option value="blueprint">Blueprint · Cool</option>
+                    <option value="moss">Moss · Calm</option>
+                    <option value="ember">Ember · Bold</option>
+                    <option value="harbor">Harbor · Deep</option>
+                  </select>
+                </span>
+              </label>
               <p class="mobile-menu-label">Color theme</p>
               <div class="theme-switcher theme-switcher-mobile" role="group" aria-label="Color theme">
                 <button

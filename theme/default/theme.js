@@ -1,9 +1,42 @@
 const themeStorageKey = "markdownvibe-theme";
 const themeChoices = ["auto", "day", "night"];
+const templateChoices = ["parchment", "blueprint", "moss", "ember", "harbor"];
+const templateStoragePrefix = "markdownvibe-template";
 const taskToggleEndpoint = "/__markdownvibe/tasks/toggle";
+const fallbackStorage = new Map();
 
 function normalizeThemePreference(value) {
   return themeChoices.includes(value) ? value : "auto";
+}
+
+function normalizeTemplateProfile(value) {
+  return templateChoices.includes(value) ? value : "parchment";
+}
+
+function getStorageScope() {
+  return window.location.origin && window.location.origin !== "null"
+    ? window.location.origin
+    : window.location.href;
+}
+
+function getTemplateStorageKey() {
+  return `${templateStoragePrefix}:${getStorageScope()}`;
+}
+
+function readStoredValue(key) {
+  try {
+    return window.localStorage.getItem(key) ?? fallbackStorage.get(key) ?? null;
+  } catch {
+    return fallbackStorage.get(key) ?? null;
+  }
+}
+
+function writeStoredValue(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    fallbackStorage.set(key, value);
+  }
 }
 
 function resolveTheme(preference) {
@@ -29,7 +62,7 @@ function applyTheme(preference, { persist = false } = {}) {
   }
 
   if (persist) {
-    window.localStorage.setItem(themeStorageKey, normalizedPreference);
+    writeStoredValue(themeStorageKey, normalizedPreference);
   }
 }
 
@@ -40,7 +73,7 @@ function initTheme() {
   }
 
   const storedPreference = normalizeThemePreference(
-    document.documentElement.dataset.themePreference ?? window.localStorage.getItem(themeStorageKey),
+    document.documentElement.dataset.themePreference ?? readStoredValue(themeStorageKey),
   );
   applyTheme(storedPreference);
 
@@ -62,6 +95,147 @@ function initTheme() {
     mediaQuery.addEventListener("change", syncAutoTheme);
   } else if (typeof mediaQuery.addListener === "function") {
     mediaQuery.addListener(syncAutoTheme);
+  }
+}
+
+function getServerOriginLabel() {
+  const origin = window.location.origin;
+  if (origin && origin !== "null") {
+    return origin;
+  }
+
+  return window.location.host ? `${window.location.protocol}//${window.location.host}` : "local file";
+}
+
+function getServerOriginHref() {
+  return window.location.origin && window.location.origin !== "null"
+    ? `${window.location.origin}/`
+    : window.location.href;
+}
+
+function decodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function buildBreadcrumbHref(segments, count) {
+  return count <= 0 ? "/" : `/${segments.slice(0, count).join("/")}`;
+}
+
+function isMarkdownSourcePath(value) {
+  return typeof value === "string" && value.toLowerCase().endsWith(".md");
+}
+
+function initLocationTrail() {
+  const serverChip = document.querySelector("[data-server-origin]");
+  const serverOriginValue = document.querySelector("[data-server-origin-value]");
+  const pathbar = document.querySelector("[data-pathbar]");
+  const breadcrumbs = document.querySelector("[data-path-breadcrumbs]");
+  const rawDownload = document.querySelector("[data-raw-download]");
+  const rawDownloadPath = rawDownload?.dataset.rawDownloadPath ?? "";
+  const currentOrigin = getServerOriginLabel();
+  const currentOriginHref = getServerOriginHref();
+
+  if (serverChip) {
+    serverChip.dataset.serverOrigin = currentOrigin;
+    serverChip.title = currentOrigin;
+  }
+
+  if (serverOriginValue) {
+    serverOriginValue.textContent = currentOrigin;
+    serverOriginValue.href = currentOriginHref;
+    serverOriginValue.title = currentOrigin;
+  }
+
+  const rawSegments = window.location.pathname.split("/").filter(Boolean);
+  if (!pathbar || !breadcrumbs) {
+    if (rawDownload && isMarkdownSourcePath(rawDownloadPath)) {
+      rawDownload.href = rawDownloadPath;
+      rawDownload.download = decodePathSegment(
+        rawDownloadPath.split("/").pop() ?? "document.md",
+      );
+      rawDownload.hidden = false;
+    }
+    return;
+  }
+
+  breadcrumbs.textContent = "";
+
+  for (const [index, segment] of rawSegments.entries()) {
+    const item = document.createElement("li");
+    item.className = "path-item";
+
+    const label = decodePathSegment(segment);
+    const isCurrent = index === rawSegments.length - 1;
+
+    if (isCurrent) {
+      const current = document.createElement("span");
+      current.className = "path-current";
+      current.textContent = label;
+      current.title = label;
+      item.append(current);
+    } else {
+      const link = document.createElement("a");
+      link.className = "path-link";
+      link.href = buildBreadcrumbHref(rawSegments, index + 1);
+      link.textContent = label;
+      link.title = label;
+      item.append(link);
+    }
+
+    breadcrumbs.append(item);
+  }
+
+  const hasPath = rawSegments.length > 0;
+  const hasRawDownload = isMarkdownSourcePath(rawDownloadPath);
+
+  if (rawDownload) {
+    if (hasRawDownload) {
+      rawDownload.href = rawDownloadPath;
+      rawDownload.download = decodePathSegment(
+        rawDownloadPath.split("/").pop() ?? "document.md",
+      );
+      rawDownload.hidden = false;
+    } else {
+      rawDownload.hidden = true;
+      rawDownload.removeAttribute("href");
+      rawDownload.removeAttribute("download");
+    }
+  }
+
+  pathbar.hidden = !hasPath && !hasRawDownload;
+}
+
+function applyTemplate(profile, { persist = false } = {}) {
+  const normalizedProfile = normalizeTemplateProfile(profile);
+  const root = document.documentElement;
+
+  root.dataset.templateProfile = normalizedProfile;
+
+  for (const select of document.querySelectorAll("[data-template-select]")) {
+    select.value = normalizedProfile;
+  }
+
+  if (persist) {
+    writeStoredValue(getTemplateStorageKey(), normalizedProfile);
+  }
+}
+
+function initTemplatePicker() {
+  const selects = Array.from(document.querySelectorAll("[data-template-select]"));
+  const storedTemplate = normalizeTemplateProfile(
+    document.documentElement.dataset.templateProfile ?? readStoredValue(getTemplateStorageKey()),
+  );
+  applyTemplate(storedTemplate);
+
+  for (const select of selects) {
+    select.addEventListener("change", () => {
+      applyTemplate(select.value, { persist: true });
+      select.closest("[data-mobile-menu]")?.removeAttribute("open");
+    });
   }
 }
 
@@ -215,6 +389,8 @@ if (document.readyState === "loading") {
     "DOMContentLoaded",
     () => {
       initTheme();
+      initLocationTrail();
+      initTemplatePicker();
       initToc();
       initTaskCheckboxes();
     },
@@ -222,6 +398,8 @@ if (document.readyState === "loading") {
   );
 } else {
   initTheme();
+  initLocationTrail();
+  initTemplatePicker();
   initToc();
   initTaskCheckboxes();
 }

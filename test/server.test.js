@@ -145,6 +145,19 @@ test("rendered pages use the configured app name and place the toc before the do
 
   assert.equal(response.status, 200);
   assert.match(response.text, />Research Desk<\/a>/);
+  assert.match(response.text, /data-server-origin/);
+  assert.match(response.text, /data-server-origin-value/);
+  assert.match(response.text, /data-pathbar/);
+  assert.match(response.text, /data-path-breadcrumbs/);
+  assert.match(response.text, /data-raw-download/);
+  assert.match(response.text, /data-raw-download-path="\/docs\/alpha\.md"/);
+  assert.match(response.text, /data-template-picker/);
+  assert.match(response.text, /data-template-select/);
+  assert.match(response.text, /<option value="parchment">Parchment · Warm<\/option>/);
+  assert.match(response.text, /<option value="blueprint">Blueprint · Cool<\/option>/);
+  assert.match(response.text, /<option value="moss">Moss · Calm<\/option>/);
+  assert.match(response.text, /<option value="ember">Ember · Bold<\/option>/);
+  assert.match(response.text, /<option value="harbor">Harbor · Deep<\/option>/);
   assert.ok(response.text.indexOf('class="toc-toggle"') < response.text.indexOf('class="brand"'));
   assert.ok(response.text.indexOf('class="brand"') < response.text.indexOf('class="theme-switcher theme-switcher-desktop"'));
   assert.match(response.text, /data-theme-choice="auto"[\s\S]*<svg/);
@@ -161,6 +174,15 @@ test("raw markdown requests pass through unchanged from mounted paths", async ()
   assert.match(response.headers["content-type"], /text\/markdown/);
   assert.match(response.text, /^---/);
   assert.match(response.text, /## Findings/);
+});
+
+test("generated directory indexes do not expose a raw markdown download action", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/library");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /data-raw-download/);
+  assert.match(response.text, /data-raw-download-path=""/);
 });
 
 test("markdown task lists render as checkable inputs tied to the source path", async () => {
@@ -476,6 +498,39 @@ test("highlight theme uses shared variables so day and night mode stay legible",
   assert.match(highlightCss, /color:\s*var\(--hljs-comment\)/);
   assert.match(themeCss, /--hljs-plain:/);
   assert.match(themeCss, /:root\[data-resolved-theme="night"\]/);
+});
+
+test("default theme exposes per-server template controls and origin-aware storage hooks", async () => {
+  const [templateHtml, themeCss, themeJs] = await Promise.all([
+    readFile(path.join(themeDir, "template.html"), "utf8"),
+    readFile(path.join(themeDir, "theme.css"), "utf8"),
+    readFile(path.join(themeDir, "theme.js"), "utf8"),
+  ]);
+
+  assert.match(templateHtml, /data-server-origin/);
+  assert.match(templateHtml, /data-server-origin-value/);
+  assert.match(templateHtml, /data-pathbar/);
+  assert.match(templateHtml, /data-path-breadcrumbs/);
+  assert.match(templateHtml, /data-raw-download/);
+  assert.match(templateHtml, /data-raw-download-path="{{RAW_DOWNLOAD_PATH}}"/);
+  assert.match(templateHtml, /data-template-picker/);
+  assert.match(templateHtml, /data-template-select/);
+  assert.match(templateHtml, /<option value="parchment">Parchment · Warm<\/option>/);
+  assert.match(templateHtml, /<option value="blueprint">Blueprint · Cool<\/option>/);
+  assert.match(templateHtml, /<option value="moss">Moss · Calm<\/option>/);
+  assert.match(templateHtml, /<option value="ember">Ember · Bold<\/option>/);
+  assert.match(templateHtml, /<option value="harbor">Harbor · Deep<\/option>/);
+  assert.match(themeCss, /:root\[data-template-profile="blueprint"/);
+  assert.match(themeCss, /:root\[data-template-profile="moss"/);
+  assert.match(themeCss, /:root\[data-template-profile="ember"/);
+  assert.match(themeCss, /:root\[data-template-profile="harbor"/);
+  assert.match(themeCss, /\.pathbar\[hidden\],\s*\.path-download\[hidden\]\s*\{/);
+  assert.match(themeJs, /const templateStoragePrefix = "markdownvibe-template"/);
+  assert.match(themeJs, /window\.location\.origin/);
+  assert.match(themeJs, /window\.location\.pathname/);
+  assert.match(themeJs, /data-path-breadcrumbs/);
+  assert.match(themeJs, /data-raw-download/);
+  assert.match(themeJs, /root\.dataset\.templateProfile = normalizedProfile/);
 });
 
 test("desktop theme uses a full-width split layout with text-only measure", async () => {

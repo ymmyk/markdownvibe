@@ -701,6 +701,7 @@ async function generateMarkdownHtmlIfNeeded({
       sourcePath: joinMountedWebPath(mount, relativeSourcePath),
       markdownSource,
     });
+    document.rawDownloadPath = joinMountedWebPath(mount, relativeSourcePath);
     const html = await renderPage({
       themeDir,
       assetPrefix,
