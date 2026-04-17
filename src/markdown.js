@@ -40,6 +40,43 @@ markdown.renderer.rules.table_open = (tokens, index, options, environment, self)
 markdown.renderer.rules.table_close = (tokens, index, options, environment, self) =>
   `${defaultTableClose(tokens, index, options, environment, self)}</div>`;
 
+const defaultLinkOpen =
+  markdown.renderer.rules.link_open ??
+  ((tokens, index, options, environment, self) =>
+    self.renderToken(tokens, index, options, environment, self));
+
+markdown.renderer.rules.link_open = (tokens, index, options, environment, self) => {
+  const token = tokens[index];
+  const hrefIndex = token.attrIndex("href");
+  if (hrefIndex >= 0) {
+    const href = token.attrs[hrefIndex][1];
+    const rewritten = rewriteMarkdownHref(href);
+    if (rewritten !== href) {
+      token.attrs[hrefIndex][1] = rewritten;
+    }
+  }
+  return defaultLinkOpen(tokens, index, options, environment, self);
+};
+
+function rewriteMarkdownHref(href) {
+  if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//") || href.startsWith("#")) {
+    return href;
+  }
+
+  const hashIndex = href.indexOf("#");
+  const queryIndex = href.indexOf("?");
+  const splitIndex =
+    hashIndex === -1 ? queryIndex : queryIndex === -1 ? hashIndex : Math.min(hashIndex, queryIndex);
+  const pathPart = splitIndex === -1 ? href : href.slice(0, splitIndex);
+  const suffix = splitIndex === -1 ? "" : href.slice(splitIndex);
+
+  if (!/\.md$/i.test(pathPart)) {
+    return href;
+  }
+
+  return `${pathPart.slice(0, -3)}.html${suffix}`;
+}
+
 markdown.renderer.rules.list_item_open = (tokens, index, options, environment, self) => {
   const task = tokens[index].meta?.taskListItem;
   if (task) {
