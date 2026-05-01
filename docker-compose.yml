@@ -1,0 +1,26 @@
+services:
+  markdownvibe:
+    image: node:22-alpine
+    container_name: markdownvibe
+    working_dir: /app
+    command: sh -c "npm install --omit=dev && npm start"
+    volumes:
+      - .:/app
+      - markdownvibe_node_modules:/app/node_modules
+      - markdownvibe_output:/app/output
+      - /mnt/dockers/markdownvibe/config.yml:/etc/markdownvibe/config.yml:ro
+      - /mnt/data/Docs:/mnt/data/Docs:ro
+    ports:
+      - "5123:5123"
+    environment:
+      - MARKDOWNVIBE_CONFIG=/etc/markdownvibe/config.yml
+      - HOST_DOMAIN=docs.kehrs.net
+      - HOST_PORT=5123
+      - HOST_PUBLIC=1
+      - HOST_NAME=Docs
+      - TZ=America/Chicago
+    restart: unless-stopped
+
+volumes:
+  markdownvibe_node_modules:
+  markdownvibe_output:
