@@ -96,6 +96,19 @@ The browser title should use the H1.
     "utf8",
   );
   await writeFile(
+    path.join(contentRoot, "diagram.md"),
+    `# Diagram Demo
+
+\`\`\`mermaid
+flowchart TD
+  A[Start] --> B{Ready?}
+  B -->|Yes| C[Ship]
+  B -->|No| D[Revise]
+\`\`\`
+`,
+    "utf8",
+  );
+  await writeFile(
     path.join(contentRoot, "tasks.md"),
     `---
 title: Checklist
@@ -260,6 +273,31 @@ test("stale cached task-list html is regenerated even when hashes still match", 
   assert.equal(refreshedResponse.status, 200);
   assert.match(refreshedResponse.text, /data-task-checkbox/);
   assert.doesNotMatch(refreshedResponse.text, /<li>\[ \] Ship <strong>draft<\/strong><\/li>/);
+});
+
+test("stale cached mermaid html is regenerated even when hashes still match", async () => {
+  const { app, outputRoot } = await makeFixture();
+  const htmlPath = path.join(outputRoot, "docs", "diagram.html");
+
+  const initialResponse = await request(app).get("/docs/diagram");
+  assert.equal(initialResponse.status, 200);
+
+  const generated = await readFile(htmlPath, "utf8");
+  const staleHtml = generated.replace(
+    /<div class="mermaid-block" data-mermaid-viewer>[\s\S]*?<\/div>\n<\/div>/,
+    `<pre class="hljs"><code>flowchart TD
+  A[Start] --&gt; B{Ready?}
+  B --&gt;|Yes| C[Ship]
+  B --&gt;|No| D[Revise]
+</code></pre>`,
+  );
+  await writeFile(htmlPath, staleHtml, "utf8");
+
+  const refreshedResponse = await request(app).get("/docs/diagram");
+  assert.equal(refreshedResponse.status, 200);
+  assert.match(refreshedResponse.text, /data-mermaid-viewer/);
+  assert.match(refreshedResponse.text, /data-mermaid-tab="source"/);
+  assert.doesNotMatch(refreshedResponse.text, /<pre class="hljs"><code>flowchart TD/);
 });
 
 test("stale embedded theme hashes force html regeneration", async () => {
@@ -488,6 +526,24 @@ test("markdown tables render inside their own horizontal scroll container", asyn
   assert.match(response.text, /<th>Column A<\/th>/);
 });
 
+test("mermaid fences render as diagram and source tab panes", async () => {
+  const { app } = await makeFixture();
+  const response = await request(app).get("/docs/diagram");
+
+  assert.equal(response.status, 200);
+  assert.match(response.text, /class="mermaid-block" data-mermaid-viewer/);
+  assert.match(response.text, /data-mermaid-panel="diagram"/);
+  assert.match(response.text, /data-mermaid-diagram>flowchart TD/);
+  assert.match(response.text, /A\[Start\] --&gt; B\{Ready\?\}/);
+  assert.match(response.text, /class="hljs mermaid-source"[^>]+data-mermaid-panel="source" hidden/);
+  assert.match(response.text, /<code class="language-mermaid" data-mermaid-source-code>flowchart TD/);
+  assert.match(
+    response.text,
+    /data-mermaid-tab="diagram"[^>]*>Diagram<\/button>\s*<button class="mermaid-tab"[^>]+aria-selected="false"[^>]+data-mermaid-tab="source">Source<\/button>/,
+  );
+  assert.doesNotMatch(response.text, /<pre class="hljs"><code>flowchart TD/);
+});
+
 test("highlight theme uses shared variables so day and night mode stay legible", async () => {
   const [highlightCss, themeCss] = await Promise.all([
     readFile(path.join(themeDir, "highlight.css"), "utf8"),
@@ -531,6 +587,9 @@ test("default theme exposes per-server template controls and origin-aware storag
   assert.match(themeJs, /data-path-breadcrumbs/);
   assert.match(themeJs, /data-raw-download/);
   assert.match(themeJs, /root\.dataset\.templateProfile = normalizedProfile/);
+  assert.match(themeJs, /const mermaidScriptSrc = "https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@11\/dist\/mermaid\.min\.js"/);
+  assert.match(themeJs, /function initMermaidViewers/);
+  assert.match(themeCss, /\.mermaid-tabbar\s*\{/);
 });
 
 test("desktop theme uses a full-width split layout with text-only measure", async () => {
@@ -540,8 +599,9 @@ test("desktop theme uses a full-width split layout with text-only measure", asyn
   assert.match(themeCss, /--content-measure:/);
   assert.match(themeCss, /grid-template-columns:\s*var\(--sidebar-width\) minmax\(0, 1fr\)/);
   assert.match(themeCss, /\.document > :is\(\.eyebrow, h1, \.deck, \.meta-strip\),/);
-  assert.match(themeCss, /\.prose > :not\(pre\):not\(table\):not\(\.table-scroll\)/);
+  assert.match(themeCss, /\.prose > :not\(pre\):not\(table\):not\(\.table-scroll\):not\(\.mermaid-block\)/);
   assert.match(themeCss, /\.table-scroll\s*\{/);
+  assert.match(themeCss, /\.mermaid-block\s*\{/);
   assert.match(themeCss, /\.document\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.match(themeCss, /\.prose th,\s*\.prose td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(themeCss, /\.prose th code,\s*\.prose td code\s*\{[^}]*white-space:\s*normal;/s);

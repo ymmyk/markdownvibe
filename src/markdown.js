@@ -33,12 +33,50 @@ const defaultListItemOpen =
   markdown.renderer.rules.list_item_open ??
   ((tokens, index, options, environment, self) =>
     self.renderToken(tokens, index, options, environment, self));
+const defaultFence =
+  markdown.renderer.rules.fence ??
+  ((tokens, index, options, environment, self) =>
+    self.renderToken(tokens, index, options, environment, self));
 
 markdown.renderer.rules.table_open = (tokens, index, options, environment, self) =>
   `<div class="table-scroll">${defaultTableOpen(tokens, index, options, environment, self)}`;
 
 markdown.renderer.rules.table_close = (tokens, index, options, environment, self) =>
   `${defaultTableClose(tokens, index, options, environment, self)}</div>`;
+
+function getFenceLanguage(token) {
+  return String(token.info ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+}
+
+function renderMermaidFence(token, index) {
+  const escaped = escapeHtml(token.content);
+  const baseId = `mermaid-${index}`;
+  const diagramPanelId = `${baseId}-diagram-panel`;
+  const sourcePanelId = `${baseId}-source-panel`;
+  const diagramTabId = `${baseId}-diagram-tab`;
+  const sourceTabId = `${baseId}-source-tab`;
+
+  return `<div class="mermaid-block" data-mermaid-viewer>
+  <div class="mermaid-panel is-active" id="${diagramPanelId}" role="tabpanel" aria-labelledby="${diagramTabId}" data-mermaid-panel="diagram">
+    <div class="mermaid-diagram" data-mermaid-diagram>${escaped}</div>
+    <p class="mermaid-status" data-mermaid-status hidden></p>
+  </div>
+  <pre class="hljs mermaid-source" id="${sourcePanelId}" role="tabpanel" aria-labelledby="${sourceTabId}" data-mermaid-panel="source" hidden><code class="language-mermaid" data-mermaid-source-code>${escaped}</code></pre>
+  <div class="mermaid-tabbar" role="tablist" aria-label="Mermaid view">
+    <button class="mermaid-tab is-active" id="${diagramTabId}" type="button" role="tab" aria-selected="true" aria-controls="${diagramPanelId}" data-mermaid-tab="diagram">Diagram</button>
+    <button class="mermaid-tab" id="${sourceTabId}" type="button" role="tab" aria-selected="false" aria-controls="${sourcePanelId}" data-mermaid-tab="source">Source</button>
+  </div>
+</div>`;
+}
+
+markdown.renderer.rules.fence = (tokens, index, options, environment, self) => {
+  const token = tokens[index];
+  if (getFenceLanguage(token) === "mermaid") {
+    return renderMermaidFence(token, index);
+  }
+
+  return defaultFence(tokens, index, options, environment, self);
+};
 
 const defaultLinkOpen =
   markdown.renderer.rules.link_open ??

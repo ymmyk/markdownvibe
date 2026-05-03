@@ -835,7 +835,7 @@ a {
 }
 
 .document > :is(.eyebrow, h1, .deck, .meta-strip),
-.prose > :not(pre):not(table):not(.table-scroll) {
+.prose > :not(pre):not(table):not(.table-scroll):not(.mermaid-block) {
   max-width: var(--content-measure);
 }
 
@@ -997,6 +997,132 @@ a {
 .prose pre code {
   padding: 0;
   background: transparent;
+}
+
+.mermaid-block {
+  max-width: 100%;
+  margin: 1.5rem 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-soft);
+  background: var(--surface-overlay);
+  font-family: var(--font-sans);
+}
+
+.mermaid-panel {
+  min-height: 14rem;
+}
+
+.mermaid-panel[hidden],
+.mermaid-source[hidden] {
+  display: none;
+}
+
+.mermaid-diagram {
+  display: grid;
+  place-items: center;
+  min-height: 14rem;
+  overflow-x: auto;
+  padding: 1.2rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  white-space: pre;
+  background:
+    linear-gradient(180deg, var(--surface-overlay), color-mix(in srgb, var(--surface-overlay) 72%, var(--code-bg)));
+  -webkit-overflow-scrolling: touch;
+}
+
+.mermaid-diagram.is-rendered {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: normal;
+  white-space: normal;
+}
+
+.mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-status {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.mermaid-status[hidden] {
+  display: none;
+}
+
+.prose .mermaid-source {
+  min-height: 14rem;
+  max-height: min(58vh, 34rem);
+  margin: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--code-bg);
+  font-size: 0.88rem;
+  line-height: 1.58;
+}
+
+.prose .mermaid-source code {
+  display: block;
+  min-width: max-content;
+  padding: 1.1rem;
+  white-space: pre;
+}
+
+.mermaid-tabbar {
+  display: flex;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.38rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface-panel);
+}
+
+.mermaid-tab {
+  appearance: none;
+  min-width: 6.5rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 0.85rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.mermaid-tab:hover,
+.mermaid-tab:focus-visible {
+  border-color: var(--line-strong);
+  color: var(--ink-strong);
+  outline: none;
+}
+
+.mermaid-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--surface-strong);
+}
+
+:root[data-resolved-theme="night"] .mermaid-tab[aria-selected="true"] {
+  color: #081321;
 }
 
 .table-scroll {

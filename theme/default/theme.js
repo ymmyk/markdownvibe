@@ -3,7 +3,11 @@ const themeChoices = ["auto", "day", "night"];
 const templateChoices = ["parchment", "blueprint", "moss", "ember", "harbor"];
 const templateStoragePrefix = "markdownvibe-template";
 const taskToggleEndpoint = "/__markdownvibe/tasks/toggle";
+const mermaidScriptSrc = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 const fallbackStorage = new Map();
+let mermaidLoader = null;
+let mermaidRenderPass = 0;
+let mermaidSvgCounter = 0;
 
 function normalizeThemePreference(value) {
   return themeChoices.includes(value) ? value : "auto";
@@ -47,7 +51,7 @@ function resolveTheme(preference) {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
 }
 
-function applyTheme(preference, { persist = false } = {}) {
+function applyTheme(preference, { persist = false, refreshMermaid = false } = {}) {
   const normalizedPreference = normalizeThemePreference(preference);
   const resolvedTheme = resolveTheme(normalizedPreference);
   const root = document.documentElement;
@@ -64,6 +68,10 @@ function applyTheme(preference, { persist = false } = {}) {
   if (persist) {
     writeStoredValue(themeStorageKey, normalizedPreference);
   }
+
+  if (refreshMermaid) {
+    renderMermaidDiagrams({ force: true });
+  }
 }
 
 function initTheme() {
@@ -79,7 +87,7 @@ function initTheme() {
 
   for (const button of buttons) {
     button.addEventListener("click", () => {
-      applyTheme(button.dataset.themeChoice, { persist: true });
+      applyTheme(button.dataset.themeChoice, { persist: true, refreshMermaid: true });
       button.closest("[data-mobile-menu]")?.removeAttribute("open");
     });
   }
@@ -87,7 +95,7 @@ function initTheme() {
   const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   const syncAutoTheme = () => {
     if (normalizeThemePreference(document.documentElement.dataset.themePreference) === "auto") {
-      applyTheme("auto");
+      applyTheme("auto", { refreshMermaid: true });
     }
   };
 
@@ -209,7 +217,7 @@ function initLocationTrail() {
   pathbar.hidden = !hasPath && !hasRawDownload;
 }
 
-function applyTemplate(profile, { persist = false } = {}) {
+function applyTemplate(profile, { persist = false, refreshMermaid = false } = {}) {
   const normalizedProfile = normalizeTemplateProfile(profile);
   const root = document.documentElement;
 
@@ -222,6 +230,10 @@ function applyTemplate(profile, { persist = false } = {}) {
   if (persist) {
     writeStoredValue(getTemplateStorageKey(), normalizedProfile);
   }
+
+  if (refreshMermaid) {
+    renderMermaidDiagrams({ force: true });
+  }
 }
 
 function initTemplatePicker() {
@@ -233,7 +245,7 @@ function initTemplatePicker() {
 
   for (const select of selects) {
     select.addEventListener("change", () => {
-      applyTemplate(select.value, { persist: true });
+      applyTemplate(select.value, { persist: true, refreshMermaid: true });
       select.closest("[data-mobile-menu]")?.removeAttribute("open");
     });
   }
@@ -384,6 +396,209 @@ function initTaskCheckboxes() {
   }
 }
 
+function loadMermaidLibrary() {
+  if (window.mermaid) {
+    return Promise.resolve(window.mermaid);
+  }
+
+  if (mermaidLoader) {
+    return mermaidLoader;
+  }
+
+  mermaidLoader = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = mermaidScriptSrc;
+    script.async = true;
+    script.onload = () => {
+      if (window.mermaid) {
+        resolve(window.mermaid);
+        return;
+      }
+
+      mermaidLoader = null;
+      reject(new Error("Mermaid loaded without exposing a global renderer."));
+    };
+    script.onerror = () => {
+      mermaidLoader = null;
+      reject(new Error("Unable to load Mermaid."));
+    };
+    document.head.append(script);
+  });
+
+  return mermaidLoader;
+}
+
+function readCssVariable(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function getMermaidConfig() {
+  return {
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: {
+      background: readCssVariable("--surface-strong"),
+      mainBkg: readCssVariable("--surface-overlay"),
+      primaryColor: readCssVariable("--surface-panel"),
+      primaryTextColor: readCssVariable("--ink-strong"),
+      primaryBorderColor: readCssVariable("--line-strong"),
+      secondaryColor: readCssVariable("--accent-soft"),
+      tertiaryColor: readCssVariable("--code-bg"),
+      lineColor: readCssVariable("--muted"),
+      fontFamily: readCssVariable("--font-sans"),
+    },
+  };
+}
+
+function setMermaidStatus(viewer, message) {
+  const status = viewer.querySelector("[data-mermaid-status]");
+  if (!status) {
+    return;
+  }
+
+  status.textContent = message;
+  status.hidden = !message;
+}
+
+async function renderMermaidDiagrams({ force = false } = {}) {
+  const viewers = Array.from(document.querySelectorAll("[data-mermaid-viewer]"));
+  if (viewers.length === 0) {
+    return;
+  }
+
+  const renderPass = ++mermaidRenderPass;
+
+  let mermaid;
+  try {
+    mermaid = await loadMermaidLibrary();
+  } catch (error) {
+    for (const viewer of viewers) {
+      viewer.classList.remove("is-loading");
+      viewer.classList.add("has-error");
+      setMermaidStatus(viewer, "Unable to load Mermaid.");
+    }
+    console.error("Unable to load Mermaid.", error);
+    return;
+  }
+
+  if (renderPass !== mermaidRenderPass) {
+    return;
+  }
+
+  try {
+    mermaid.initialize(getMermaidConfig());
+  } catch (error) {
+    for (const viewer of viewers) {
+      viewer.classList.remove("is-loading");
+      viewer.classList.add("has-error");
+      setMermaidStatus(viewer, "Unable to configure Mermaid.");
+    }
+    console.error("Unable to configure Mermaid.", error);
+    return;
+  }
+
+  for (const viewer of viewers) {
+    const diagram = viewer.querySelector("[data-mermaid-diagram]");
+    const sourceCode = viewer.querySelector("[data-mermaid-source-code]");
+    const source = sourceCode?.textContent ?? diagram?.textContent ?? "";
+
+    if (!diagram || !source.trim()) {
+      continue;
+    }
+
+    if (!force && diagram.dataset.mermaidRendered === "true") {
+      continue;
+    }
+
+    viewer.classList.add("is-loading");
+    viewer.classList.remove("has-error");
+    diagram.classList.remove("is-rendered");
+    setMermaidStatus(viewer, "Rendering diagram.");
+
+    try {
+      mermaidSvgCounter += 1;
+      const result = await mermaid.render(`markdownvibe-mermaid-${mermaidSvgCounter}`, source);
+      if (renderPass !== mermaidRenderPass) {
+        return;
+      }
+
+      diagram.innerHTML = result.svg;
+      result.bindFunctions?.(diagram);
+      diagram.dataset.mermaidRendered = "true";
+      diagram.classList.add("is-rendered");
+      setMermaidStatus(viewer, "");
+    } catch (error) {
+      diagram.textContent = source;
+      delete diagram.dataset.mermaidRendered;
+      viewer.classList.add("has-error");
+      setMermaidStatus(viewer, "Unable to render Mermaid diagram.");
+      console.error("Unable to render Mermaid diagram.", error);
+    } finally {
+      viewer.classList.remove("is-loading");
+    }
+  }
+}
+
+function setMermaidMode(viewer, mode) {
+  const nextMode = mode === "source" ? "source" : "diagram";
+
+  for (const panel of viewer.querySelectorAll("[data-mermaid-panel]")) {
+    const isActive = panel.dataset.mermaidPanel === nextMode;
+    panel.hidden = !isActive;
+    panel.classList.toggle("is-active", isActive);
+  }
+
+  for (const tab of viewer.querySelectorAll("[data-mermaid-tab]")) {
+    const isActive = tab.dataset.mermaidTab === nextMode;
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.classList.toggle("is-active", isActive);
+    tab.tabIndex = isActive ? 0 : -1;
+  }
+}
+
+function initMermaidViewers() {
+  const viewers = Array.from(document.querySelectorAll("[data-mermaid-viewer]"));
+  if (viewers.length === 0) {
+    return;
+  }
+
+  for (const viewer of viewers) {
+    const tabs = Array.from(viewer.querySelectorAll("[data-mermaid-tab]"));
+    setMermaidMode(viewer, "diagram");
+
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => {
+        setMermaidMode(viewer, tab.dataset.mermaidTab);
+      });
+
+      tab.addEventListener("keydown", (event) => {
+        const currentIndex = tabs.indexOf(tab);
+        const lastIndex = tabs.length - 1;
+        let nextIndex = currentIndex;
+
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+          nextIndex = currentIndex <= 0 ? lastIndex : currentIndex - 1;
+        } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+          nextIndex = currentIndex >= lastIndex ? 0 : currentIndex + 1;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = lastIndex;
+        } else {
+          return;
+        }
+
+        event.preventDefault();
+        tabs[nextIndex].focus();
+        tabs[nextIndex].click();
+      });
+    }
+  }
+
+  renderMermaidDiagrams();
+}
+
 if (document.readyState === "loading") {
   document.addEventListener(
     "DOMContentLoaded",
@@ -393,6 +608,7 @@ if (document.readyState === "loading") {
       initTemplatePicker();
       initToc();
       initTaskCheckboxes();
+      initMermaidViewers();
     },
     { once: true },
   );
@@ -402,4 +618,5 @@ if (document.readyState === "loading") {
   initTemplatePicker();
   initToc();
   initTaskCheckboxes();
+  initMermaidViewers();
 }

@@ -67,6 +67,7 @@ The default theme includes:
 - an `Auto` / `Day` / `Night` switcher
 - a per-server template dropdown with `Parchment`, `Blueprint`, `Moss`, `Ember`, and `Harbor` profiles
 - a header trail that shows the current origin, clickable path segments, and a raw `.md` download action on rendered markdown pages
+- Mermaid fence rendering with a bottom tab bar for switching between the diagram and source
 
 The chosen template is stored locally in the browser per origin, so you can give different markdownvibe servers different visual chrome without changing server-side config. On desktop the controls stay in the top-right bar; on mobile they move into the top-right display menu.
 

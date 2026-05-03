@@ -327,6 +327,14 @@ function htmlNeedsTaskListUpgrade(markdownSource, html) {
   return markdownContainsTaskList(markdownSource) && !html.includes("data-task-checkbox");
 }
 
+function markdownContainsMermaidFence(source) {
+  return /(?:^|\r?\n)```[^\S\r\n]*mermaid(?:\s|$)/i.test(source);
+}
+
+function htmlNeedsMermaidUpgrade(markdownSource, html) {
+  return markdownContainsMermaidFence(markdownSource) && !html.includes("data-mermaid-viewer");
+}
+
 function renderIndexToc(sections) {
   if (sections.length === 0) {
     return '<p class="toc-empty">No sections yet.</p>';
@@ -692,7 +700,8 @@ async function generateMarkdownHtmlIfNeeded({
     !existingHashes ||
     existingHashes.markdownHash !== markdownHash ||
     existingHashes.themeHash !== themeHash ||
-    htmlNeedsTaskListUpgrade(markdownSource, existingHashes.html);
+    htmlNeedsTaskListUpgrade(markdownSource, existingHashes.html) ||
+    htmlNeedsMermaidUpgrade(markdownSource, existingHashes.html);
 
   if (shouldRender) {
     const relativeSourcePath = path.relative(mount.fullPath, markdownPath).replace(/\\/g, "/");

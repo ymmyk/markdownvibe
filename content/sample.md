@@ -17,6 +17,15 @@ This repo is set up so the bot can write **Markdown only** while the service han
 3. Requests for `*.html` or extensionless paths look for a matching Markdown file.
 4. If the Markdown is newer than the cached HTML, or the theme changed, the HTML is regenerated.
 
+```mermaid
+flowchart TD
+  A[Request path] --> B{Markdown file?}
+  B -->|Raw .md| C[Serve source]
+  B -->|HTML route| D{Cache current?}
+  D -->|Yes| E[Serve cached HTML]
+  D -->|No| F[Render and cache HTML]
+```
+
 ## Example Sections
 
 ### Market Scan
