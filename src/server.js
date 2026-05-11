@@ -568,23 +568,6 @@ async function collectMountDirectories(mount, currentPath = mount.fullPath, rela
 }
 
 async function buildMountIndexDocument({ mounts, appName }) {
-  const directorySections = await Promise.all(
-    mounts.map(async (mount) => {
-      const directories = await collectMountDirectories(mount);
-      if (directories.length === 0) {
-        return null;
-      }
-
-      return {
-        id: `directories-${mount.cacheKey.replaceAll(path.sep, "-")}`,
-        title:
-          mount.webPath === "/"
-            ? "Root Directories"
-            : `Directories In ${mount.webPath}`,
-        items: directories,
-      };
-    }),
-  );
   const sections = [
     {
       id: "paths",
@@ -596,12 +579,7 @@ async function buildMountIndexDocument({ mounts, appName }) {
         detail: mount.fullPath,
       })),
     },
-    ...directorySections.filter(Boolean),
   ].filter((section) => section.items.length > 0);
-  const directoryCount = directorySections.reduce(
-    (count, section) => count + (section?.items.length ?? 0),
-    0,
-  );
 
   const document = {
     title: "Published Content",
@@ -609,7 +587,6 @@ async function buildMountIndexDocument({ mounts, appName }) {
     sourcePath: "/",
     metadata: [
       { label: "Mounts", value: String(mounts.length) },
-      { label: "Directories", value: String(directoryCount) },
     ],
     sections,
   };
