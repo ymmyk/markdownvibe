@@ -1222,6 +1222,39 @@ a {
   line-height: 1.55;
 }
 
+.prose .index-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.prose .index-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--muted);
+  background: var(--surface-overlay);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.prose .index-download:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.prose .index-download-icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
 .prose .index-secondary {
   width: fit-content;
   font-family: var(--font-sans);
