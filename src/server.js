@@ -821,11 +821,11 @@ async function sendDirectoryResponse({ directoryPath, requestPath, mount, res, c
       assetPrefix: config.assetPrefix,
       appName: config.appName,
     });
-    return res.sendFile(renderedHtmlPath);
+    return res.sendFile(renderedHtmlPath, { dotfiles: "allow" });
   }
 
   if (await fileExists(indexHtmlSourcePath)) {
-    return res.sendFile(indexHtmlSourcePath);
+    return res.sendFile(indexHtmlSourcePath, { dotfiles: "allow" });
   }
 
   const htmlPath = buildDirectoryOutputPath(config.outputRoot, mount, directoryPath);
@@ -839,7 +839,7 @@ async function sendDirectoryResponse({ directoryPath, requestPath, mount, res, c
     mountedPath: requestPath === "/" ? mountedPath : requestPath,
     config,
   });
-  return res.sendFile(renderedHtmlPath);
+  return res.sendFile(renderedHtmlPath, { dotfiles: "allow" });
 }
 
 function matchMount(mounts, requestPath) {
@@ -871,7 +871,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
   const exactStat = await statPath(fsPath);
 
   if (extension && extension !== ".html" && extension !== ".md" && exactStat?.isFile()) {
-    return res.sendFile(fsPath);
+    return res.sendFile(fsPath, { dotfiles: "allow" });
   }
 
   if (extension === ".md") {
@@ -889,7 +889,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
     const markdownExists = await fileExists(markdownCandidate.markdownPath);
 
     if (!markdownExists && exactStat?.isFile()) {
-      return res.sendFile(fsPath);
+      return res.sendFile(fsPath, { dotfiles: "allow" });
     }
 
     if (markdownExists) {
@@ -908,7 +908,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
       });
 
       if (renderedHtmlPath) {
-        return res.sendFile(renderedHtmlPath);
+        return res.sendFile(renderedHtmlPath, { dotfiles: "allow" });
       }
     }
 
@@ -934,7 +934,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
   if (exactStat?.isFile()) {
     const markdownSiblingPath = `${fsPath}.md`;
     if (!(await fileExists(markdownSiblingPath))) {
-      return res.sendFile(fsPath);
+      return res.sendFile(fsPath, { dotfiles: "allow" });
     }
   }
 
@@ -961,7 +961,7 @@ async function handleMountedRequest({ req, res, config, mount, relativeRequestPa
     });
 
     if (renderedHtmlPath) {
-      return res.sendFile(renderedHtmlPath);
+      return res.sendFile(renderedHtmlPath, { dotfiles: "allow" });
     }
   }
 
@@ -976,7 +976,7 @@ export function createApp(overrides = {}) {
   app.set("trust proxy", true);
   app.use(express.json({ limit: "16kb" }));
   app.get("/favicon.ico", (_req, res) => {
-    res.sendFile(path.join(config.themeDir, "favicon.svg"));
+    res.sendFile(path.join(config.themeDir, "favicon.svg"), { dotfiles: "allow" });
   });
   app.use(
     config.assetPrefix,
@@ -1017,7 +1017,7 @@ export function createApp(overrides = {}) {
 
       if (normalizeRequestPath(req.path) === "/") {
         const htmlPath = await generateMountIndexIfNeeded(config);
-        res.sendFile(htmlPath);
+        res.sendFile(htmlPath, { dotfiles: "allow" });
         return;
       }
 
