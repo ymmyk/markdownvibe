@@ -352,6 +352,8 @@ function renderIndexToc(sections) {
   return `<ul class="toc-list">${items}</ul>`;
 }
 
+const downloadIcon = `<svg class="index-download-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0 3-3M8 10 5 7M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 function renderIndexSection(section) {
   const items = section.items
     .map(
@@ -361,7 +363,14 @@ function renderIndexSection(section) {
             <a class="index-primary" href="${item.href}">${escapeHtml(item.label)}</a>
             <span class="index-kind">${escapeHtml(item.kind)}</span>
           </div>
-          <p class="index-meta">${escapeHtml(item.detail)}</p>
+          <div class="index-meta-row">
+            <p class="index-meta">${escapeHtml(item.detail)}</p>
+            ${
+              item.downloadHref
+                ? `<a class="index-download" href="${item.downloadHref}" download>${downloadIcon}Download</a>`
+                : ""
+            }
+          </div>
           ${
             item.rawHref
               ? `<a class="index-secondary" href="${item.rawHref}">Raw Markdown</a>`
@@ -502,10 +511,12 @@ async function buildDirectoryIndexDocument({ directoryPath, mountedPath, mounts 
       continue;
     }
 
+    const assetHref = buildChildRequestPath(normalizedMountedPath, entry.name);
     assets.push({
       label: entry.name,
       kind: extension ? extension.slice(1).toUpperCase() : "File",
-      href: buildChildRequestPath(normalizedMountedPath, entry.name),
+      href: assetHref,
+      downloadHref: assetHref,
       detail: "Direct asset passthrough",
     });
   }
