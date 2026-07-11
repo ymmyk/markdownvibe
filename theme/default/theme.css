@@ -834,8 +834,8 @@ a {
   box-shadow: var(--shadow);
 }
 
-.document > :is(.eyebrow, h1, .deck, .meta-strip),
-.prose > :not(pre):not(table):not(.table-scroll):not(.mermaid-block) {
+.document > :is(.eyebrow, h1, .deck, .meta-strip, .properties),
+.prose > :not(pre):not(table):not(.table-scroll):not(.mermaid-block):not(.callout):not(.obsidian-embed) {
   max-width: var(--content-measure);
 }
 
@@ -870,23 +870,86 @@ a {
   line-height: 1.8;
 }
 
-.meta-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.85rem;
+/* Obsidian-style properties (collapsed by default) */
+.meta-strip.properties {
+  display: block;
   margin: 1.5rem 0 2rem;
-  padding: 1rem;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-soft);
   background: var(--surface-overlay);
+  overflow: hidden;
 }
 
-.meta-item {
+.properties-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.properties-summary::-webkit-details-marker {
+  display: none;
+}
+
+.properties-summary::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+  opacity: 0.8;
+}
+
+.properties[open] > .properties-summary::before {
+  transform: rotate(45deg);
+}
+
+.properties-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.properties-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.meta-item,
+.property-row {
   display: grid;
   gap: 0.25rem;
+  margin: 0;
+  padding-top: 0.85rem;
 }
 
 .meta-label {
+  margin: 0;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -894,7 +957,206 @@ a {
 }
 
 .meta-value {
+  margin: 0;
   font-weight: 650;
+}
+
+.property-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.15rem 0.35rem 0.15rem 0;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.property-tag,
+.obsidian-tag {
+  color: var(--link);
+}
+
+.obsidian-tag {
+  display: inline;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.4rem;
+  background: var(--accent-soft);
+  font-family: var(--font-sans);
+  font-size: 0.92em;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.wikilink {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.wikilink.is-unresolved {
+  color: var(--muted);
+  text-decoration-style: dotted;
+  opacity: 0.85;
+}
+
+.prose mark {
+  padding: 0.05em 0.2em;
+  border-radius: 0.25em;
+  background: rgba(255, 214, 102, 0.45);
+  color: inherit;
+}
+
+:root[data-resolved-theme="night"] .prose mark {
+  background: rgba(211, 172, 69, 0.28);
+}
+
+/* Callouts */
+.callout {
+  margin: 1.4rem 0;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius-soft);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.7rem 1rem 0.35rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink-strong);
+  cursor: default;
+  list-style: none;
+}
+
+details.callout > .callout-title {
+  cursor: pointer;
+  padding-bottom: 0.7rem;
+}
+
+details.callout > .callout-title::-webkit-details-marker {
+  display: none;
+}
+
+.callout-content {
+  padding: 0 1rem 0.9rem;
+}
+
+.callout-content > :first-child {
+  margin-top: 0;
+}
+
+.callout-content > :last-child {
+  margin-bottom: 0;
+}
+
+.callout-note,
+.callout-info,
+.callout-todo {
+  border-left-color: #4a8fd4;
+}
+
+.callout-tip,
+.callout-hint,
+.callout-important {
+  border-left-color: #3f9b6a;
+}
+
+.callout-warning,
+.callout-caution,
+.callout-attention {
+  border-left-color: #d4a017;
+}
+
+.callout-danger,
+.callout-error,
+.callout-bug,
+.callout-failure,
+.callout-fail,
+.callout-missing {
+  border-left-color: #d4574a;
+}
+
+.callout-success,
+.callout-check,
+.callout-done {
+  border-left-color: #3f9b6a;
+}
+
+.callout-question,
+.callout-help,
+.callout-faq {
+  border-left-color: #8b6fd4;
+}
+
+.callout-example,
+.callout-quote,
+.callout-cite,
+.callout-abstract,
+.callout-summary,
+.callout-tldr {
+  border-left-color: var(--accent);
+}
+
+/* Embeds */
+.obsidian-embed-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem 0;
+  border-radius: var(--radius-soft);
+  border: 1px solid var(--line);
+}
+
+.obsidian-embed-note {
+  margin: 1.25rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-soft);
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+
+.obsidian-embed-header {
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.obsidian-embed-body {
+  padding: 0.85rem 1rem 1rem;
+}
+
+.obsidian-embed-body > :first-child {
+  margin-top: 0;
+}
+
+.obsidian-embed.is-unresolved,
+.obsidian-embed.is-cycle {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-soft);
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+}
+
+.obsidian-block {
+  scroll-margin-top: 6rem;
 }
 
 .prose {

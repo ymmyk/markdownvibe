@@ -1,6 +1,8 @@
 # markdownvibe
 
-`markdownvibe` is a small file-backed web service for AI-authored research docs. The bot writes Markdown. The service handles mounted content paths, extensionless routes, raw Markdown passthrough, and cached HTML generation under `output/`.
+**Webify your Obsidian vaults.**
+
+`markdownvibe` is a small file-backed web service for Markdown research docs and Obsidian vaults. Point it at a folder of notes — it handles mounts, extensionless routes, raw Markdown passthrough, cached HTML under `output/`, and Obsidian-flavored syntax (wikilinks, callouts, properties, embeds).
 
 ## Screenshot
 
@@ -15,6 +17,25 @@
 - Exact folder matches win over sibling `foo.md` documents on extensionless routes.
 - Directory routes use `index.md` / `index.html`, or a generated folder index if neither exists.
 - Cached HTML is refreshed when embedded `markdown-hash` or `theme-hash` metadata no longer matches the current source/render inputs.
+
+## Obsidian vault support
+
+Designed so you can mount an Obsidian vault (or any folder of notes) and browse it as a site.
+
+| Feature | Syntax / behavior |
+| --- | --- |
+| **Properties** | YAML frontmatter → collapsible **Properties** panel (collapsed by default) |
+| **Wikilinks** | `[[Note]]`, `[[Note\|alias]]`, `[[Note#Heading]]`, `[[Note#^block]]` |
+| **Image embeds** | `![[image.png]]`, `![[image.png\|300]]` |
+| **Note embeds** | `![[Note]]`, `![[Note#Section]]` (depth-limited, cycle-safe) |
+| **Callouts** | `> [!note]`, custom titles, fold with `-` / `+` |
+| **Highlight** | `==highlighted==` |
+| **Comments** | `%%hidden%%` stripped from published HTML |
+| **Tags** | `#tag` / `#nested/tag` + frontmatter `tags` as chips |
+| **Block IDs** | Trailing `^block-id` becomes an element id |
+| **cssclasses** | Applied as `cssclass-*` on the article |
+
+Unresolved wikilinks render as dotted “missing” links instead of failing the page. See `docs/obsidian-support-plan.md` for scope and follow-ups.
 
 ## Run
 

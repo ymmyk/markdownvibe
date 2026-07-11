@@ -22,6 +22,8 @@ import { renderPage } from "./template.js";
 const rendererDependencyPaths = [
   fileURLToPath(new URL(import.meta.url)),
   fileURLToPath(new URL("./markdown.js", import.meta.url)),
+  fileURLToPath(new URL("./obsidian.js", import.meta.url)),
+  fileURLToPath(new URL("./vault-index.js", import.meta.url)),
   fileURLToPath(new URL("./template.js", import.meta.url)),
 ];
 const taskToggleRoute = "/__markdownvibe/tasks/toggle";
@@ -697,6 +699,7 @@ async function generateMarkdownHtmlIfNeeded({
       markdownPath,
       sourcePath: joinMountedWebPath(mount, relativeSourcePath),
       markdownSource,
+      mount,
     });
     document.rawDownloadPath = joinMountedWebPath(mount, relativeSourcePath);
     const html = await renderPage({

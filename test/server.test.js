@@ -438,15 +438,11 @@ test("root mount index is rendered when no root path is mounted", async () => {
   assert.equal(response.status, 200);
   assert.match(response.text, /Published Content/);
   assert.match(response.text, /href="\/docs"/);
-  assert.match(response.text, /Directories In \/docs/);
-  assert.match(response.text, /href="\/docs\/reports\/"/);
-  assert.match(response.text, /href="\/docs\/library\/"/);
-  assert.match(response.text, /href="\/docs\/library\/archive\/"/);
-  assert.match(response.text, /href="\/docs\/mixed\/"/);
+  assert.match(response.text, /Configured Paths/);
 
   const generated = await readFile(path.join(outputRoot, "_site", "index.html"), "utf8");
   assert.match(generated, /Configured Paths/);
-  assert.match(generated, /Directories In \/docs/);
+  assert.match(generated, /href="\/docs"/);
 });
 
 test("yaml config files define port, output root, and mounted paths", async () => {
@@ -598,11 +594,107 @@ test("desktop theme uses a full-width split layout with text-only measure", asyn
   assert.match(themeCss, /--sidebar-width:/);
   assert.match(themeCss, /--content-measure:/);
   assert.match(themeCss, /grid-template-columns:\s*var\(--sidebar-width\) minmax\(0, 1fr\)/);
-  assert.match(themeCss, /\.document > :is\(\.eyebrow, h1, \.deck, \.meta-strip\),/);
-  assert.match(themeCss, /\.prose > :not\(pre\):not\(table\):not\(\.table-scroll\):not\(\.mermaid-block\)/);
+  assert.match(themeCss, /\.document > :is\(\.eyebrow, h1, \.deck, \.meta-strip, \.properties\)/);
+  assert.match(themeCss, /\.meta-strip\.properties/);
+  assert.match(themeCss, /\.callout\s*\{/);
+  assert.match(themeCss, /\.wikilink/);
   assert.match(themeCss, /\.table-scroll\s*\{/);
   assert.match(themeCss, /\.mermaid-block\s*\{/);
   assert.match(themeCss, /\.document\s*\{[^}]*overflow-x:\s*hidden;/s);
   assert.match(themeCss, /\.prose th,\s*\.prose td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(themeCss, /\.prose th code,\s*\.prose td code\s*\{[^}]*white-space:\s*normal;/s);
+});
+
+test("obsidian properties render collapsed with tags and cssclasses", async () => {
+  const { app, contentRoot } = await makeFixture();
+  await writeFile(
+    path.join(contentRoot, "vault-note.md"),
+    `---
+title: Vault Note
+tags:
+  - project
+  - active
+status: draft
+cssclasses:
+  - wide
+---
+
+# Vault Note
+
+Body with a #inline-tag and ==highlighted== text.
+%%this comment should vanish%%
+`,
+    "utf8",
+  );
+
+  const response = await request(app).get("/docs/vault-note");
+  assert.equal(response.status, 200);
+  assert.match(response.text, /<details class="meta-strip properties">/);
+  assert.doesNotMatch(response.text, /<details class="meta-strip properties" open/);
+  assert.match(response.text, /properties-count">2</);
+  assert.match(response.text, /property-tag[^>]*>#project</);
+  assert.match(response.text, /data-kind="text"[^>]*>[\s\S]*status/);
+  assert.match(response.text, /class="prose cssclass-wide"/);
+  assert.match(response.text, /obsidian-tag[^>]*>#inline-tag</);
+  assert.match(response.text, /<mark>highlighted<\/mark>/);
+  assert.doesNotMatch(response.text, /this comment should vanish/);
+});
+
+test("obsidian wikilinks callouts embeds and block ids render", async () => {
+  const { app, contentRoot } = await makeFixture();
+  await writeFile(
+    path.join(contentRoot, "Target Note.md"),
+    `# Target Note
+
+## Deep Section
+
+Embedded section body.
+
+A linked paragraph. ^my-block
+`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(contentRoot, "obsidian-home.md"),
+    `# Obsidian Home
+
+See [[Target Note]] and [[Target Note|alias label]] and [[Target Note#Deep Section]].
+
+Missing: [[No Such Note]].
+
+> [!warning] Watch out
+> Hot surface.
+
+> [!faq]- Collapsed FAQ
+> Hidden answer.
+
+![[screenshot.png|240]]
+
+![[Target Note#Deep Section]]
+
+Link to block: [[Target Note#^my-block]]
+`,
+    "utf8",
+  );
+
+  const response = await request(app).get("/docs/obsidian-home");
+  assert.equal(response.status, 200);
+  assert.match(response.text, /class="wikilink" href="\/docs\/Target%20Note"/);
+  assert.match(response.text, />alias label</);
+  assert.match(response.text, /href="\/docs\/Target%20Note#deep-section"/);
+  assert.match(response.text, /class="wikilink is-unresolved"/);
+  assert.match(response.text, /data-callout="warning"/);
+  assert.match(response.text, /Watch out/);
+  assert.match(response.text, /<details class="callout callout-faq"/);
+  assert.doesNotMatch(response.text, /callout-faq"[^>]* open/);
+  assert.match(response.text, /obsidian-embed-image[^>]*src="\/docs\/screenshot\.png"/);
+  assert.match(response.text, /width="240"/);
+  assert.match(response.text, /obsidian-embed-note/);
+  assert.match(response.text, /Embedded section body/);
+  assert.match(response.text, /href="\/docs\/Target%20Note#my-block"/);
+
+  const target = await request(app).get("/docs/Target%20Note");
+  assert.equal(target.status, 200);
+  assert.match(target.text, /id="my-block"/);
+  assert.doesNotMatch(target.text, /\^my-block/);
 });

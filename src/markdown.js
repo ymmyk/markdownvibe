@@ -3,6 +3,14 @@ import hljs from "highlight.js";
 import MarkdownIt from "markdown-it";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  buildPropertiesModel,
+  buildWikilinkCache,
+  extractBlockById,
+  extractMarkdownSection,
+  obsidianMarkdownPlugin,
+  stripObsidianComments,
+} from "./obsidian.js";
 
 const markdown = new MarkdownIt({
   html: false,
@@ -18,6 +26,8 @@ const markdown = new MarkdownIt({
     return `<pre class="hljs"><code>${escaped}</code></pre>`;
   },
 });
+
+obsidianMarkdownPlugin(markdown);
 
 const taskListMarkerPattern = /^\[([ xX])\]\s+/;
 
@@ -238,16 +248,22 @@ function getContentStartIndex(source, content) {
 }
 
 export function getTaskListItemsFromMarkdownSource(markdownSource) {
-  const parsed = matter(markdownSource);
-  const contentStartIndex = getContentStartIndex(markdownSource, parsed.content);
+  const withoutComments = stripObsidianComments(markdownSource);
+  const parsed = matter(withoutComments);
+  const contentStartIndex = getContentStartIndex(withoutComments, parsed.content);
   const lineOffset =
-    contentStartIndex >= 0 ? countLineBreaks(markdownSource.slice(0, contentStartIndex)) : 0;
-  const tokens = markdown.parse(parsed.content, {});
+    contentStartIndex >= 0 ? countLineBreaks(withoutComments.slice(0, contentStartIndex)) : 0;
+  // Best-effort line map vs original: comments may shift; task toggles use content lines.
+  const originalParsed = matter(markdownSource);
+  const originalStart = getContentStartIndex(markdownSource, originalParsed.content);
+  const originalOffset =
+    originalStart >= 0 ? countLineBreaks(markdownSource.slice(0, originalStart)) : lineOffset;
+  const tokens = markdown.parse(originalParsed.content, {});
   const tasks = collectTaskListItems(tokens);
 
   return tasks.map((task) => ({
     ...task,
-    line: task.contentLine === null ? null : lineOffset + task.contentLine,
+    line: task.contentLine === null ? null : originalOffset + task.contentLine,
   }));
 }
 
@@ -369,10 +385,100 @@ function stripLeadingTitleHeading(tokens, title, headings) {
   };
 }
 
-export async function renderMarkdownDocument({ markdownPath, sourcePath, markdownSource }) {
+const EMBED_PLACEHOLDER =
+  /<!--obsidian-embed:([^|]+)\|([^|]*)\|([^>]*)-->/g;
+
+async function expandNoteEmbeds(bodyHtml, { mount, embedDepth, embedStack }) {
+  if (!mount || embedDepth <= 0) {
+    return bodyHtml.replace(EMBED_PLACEHOLDER, (_match, _path, _frag, _block) => {
+      return `<div class="obsidian-embed is-unresolved">Embed depth exceeded</div>`;
+    });
+  }
+
+  const matches = [...bodyHtml.matchAll(EMBED_PLACEHOLDER)];
+  if (matches.length === 0) {
+    return bodyHtml;
+  }
+
+  let result = bodyHtml;
+  for (const match of matches) {
+    const absolutePath = match[1];
+    const fragment = match[2];
+    const blockId = match[3];
+    const placeholder = match[0];
+
+    if (embedStack.has(absolutePath)) {
+      result = result.replace(
+        placeholder,
+        `<div class="obsidian-embed is-cycle">Circular embed skipped</div>`,
+      );
+      continue;
+    }
+
+    let source;
+    try {
+      source = await readFile(absolutePath, "utf8");
+    } catch {
+      result = result.replace(
+        placeholder,
+        `<div class="obsidian-embed is-unresolved">Missing embed</div>`,
+      );
+      continue;
+    }
+
+    const withoutComments = stripObsidianComments(source);
+    const parsed = matter(withoutComments);
+    let embedContent = parsed.content;
+    if (blockId) {
+      embedContent = extractBlockById(embedContent, blockId);
+    } else if (fragment) {
+      embedContent = extractMarkdownSection(embedContent, fragment);
+    }
+
+    const nextStack = new Set(embedStack);
+    nextStack.add(absolutePath);
+    const nested = await renderMarkdownDocument({
+      markdownPath: absolutePath,
+      sourcePath: absolutePath,
+      markdownSource: embedContent,
+      mount,
+      embedDepth: embedDepth - 1,
+      embedStack: nextStack,
+      skipLeadingTitle: true,
+    });
+
+    const title = path.basename(absolutePath, ".md");
+    const html = `<aside class="obsidian-embed obsidian-embed-note" data-embed-source="${escapeHtml(absolutePath)}">
+  <div class="obsidian-embed-header">${escapeHtml(title)}${fragment ? ` · ${escapeHtml(fragment)}` : ""}</div>
+  <div class="obsidian-embed-body">${nested.bodyHtml}</div>
+</aside>`;
+    result = result.replace(placeholder, html);
+  }
+
+  return result;
+}
+
+export async function renderMarkdownDocument({
+  markdownPath,
+  sourcePath,
+  markdownSource,
+  mount = null,
+  embedDepth = 2,
+  embedStack = new Set(),
+  skipLeadingTitle = false,
+}) {
   const source = markdownSource ?? (await readFile(markdownPath, "utf8"));
-  const parsed = matter(source);
-  const tokens = markdown.parse(parsed.content, {});
+  const withoutComments = stripObsidianComments(source);
+  const parsed = matter(withoutComments);
+
+  const env = {
+    mount,
+    markdownPath,
+    sourcePath,
+  };
+  env._wikilinkCache = await buildWikilinkCache(parsed.content, env);
+
+  const tokens = markdown.parse(parsed.content, env);
   collectTaskListItems(tokens, { decorate: true });
   const headings = collectHeadings(tokens);
   const documentHeading = headings.find((heading) => heading.level === 1)?.text;
@@ -380,22 +486,30 @@ export async function renderMarkdownDocument({ markdownPath, sourcePath, markdow
     parsed.data.title ??
     documentHeading ??
     path.basename(markdownPath, ".md");
-  const { bodyTokens, headings: visibleHeadings } = stripLeadingTitleHeading(tokens, title, headings);
-  const bodyHtml = markdown.renderer.render(bodyTokens, markdown.options, {});
+  const { bodyTokens, headings: visibleHeadings } = skipLeadingTitle
+    ? { bodyTokens: tokens, headings }
+    : stripLeadingTitleHeading(tokens, title, headings);
+  let bodyHtml = markdown.renderer.render(bodyTokens, markdown.options, env);
+  bodyHtml = await expandNoteEmbeds(bodyHtml, { mount, embedDepth, embedStack });
 
   const summary = parsed.data.summary ?? parsed.data.description ?? "";
-  const metadata = Object.entries(parsed.data)
-    .filter(([key]) => !["title", "summary", "description"].includes(key))
-    .map(([key, value]) => ({
-      label: key,
-      value: formatMetaValue(value),
-    }));
+  const properties = buildPropertiesModel(parsed.data);
+  const metadata = properties.rows.map((row) => ({
+    label: row.label,
+    value: formatMetaValue(parsed.data[row.label]),
+    kind: row.kind,
+    html: row.html,
+  }));
+
+  const articleClasses = ["prose", ...properties.cssclasses.map((value) => `cssclass-${value.replace(/[^a-zA-Z0-9_-]/g, "-")}`)];
 
   return {
     title,
     htmlTitle: documentHeading ?? title,
     summary,
     metadata,
+    properties,
+    articleClass: articleClasses.join(" "),
     headings: visibleHeadings,
     tocHtml: renderTocItems(buildTocTree(visibleHeadings)),
     bodyHtml,
