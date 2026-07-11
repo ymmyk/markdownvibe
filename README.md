@@ -18,10 +18,20 @@
 
 ## Run
 
+Requires [pnpm](https://pnpm.io) 11+ (Node 22+). Corepack can activate the pinned version from `packageManager` in `package.json`:
+
 ```bash
-npm install
-npm start
+corepack enable
+pnpm install
+pnpm start
 ```
+
+pnpm 11 supply-chain defaults are pinned in `pnpm-workspace.yaml`:
+
+- `minimumReleaseAge: 1440` — refuse package versions younger than 1 day
+- `allowBuilds: {}` — install/postinstall scripts are denied unless explicitly whitelisted
+- `strictDepBuilds: true` — unreviewed build scripts fail the install
+
 
 Then open [http://localhost:5123](http://localhost:5123).
 

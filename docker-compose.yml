@@ -3,7 +3,7 @@ services:
     image: node:22-alpine
     container_name: markdownvibe
     working_dir: /app
-    command: sh -c "npm install --omit=dev && npm start"
+    command: sh -c "corepack enable && corepack prepare pnpm@11.12.0 --activate && pnpm install --prod --frozen-lockfile && pnpm start"
     volumes:
       - .:/app
       - markdownvibe_node_modules:/app/node_modules

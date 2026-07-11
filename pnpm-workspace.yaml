@@ -1,0 +1,16 @@
+# pnpm 11 supply-chain defaults (explicit so the repo enforces them)
+# https://pnpm.io/supply-chain-security
+
+# Don't install package versions published less than 1 day ago
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+
+# Transitive deps cannot pull git/tarball (exotic) sources
+blockExoticSubdeps: true
+
+# Fail install if any dependency has unreviewed lifecycle scripts
+strictDepBuilds: true
+
+# Whitelist only — packages not listed here cannot run install/postinstall scripts.
+# Add entries via `pnpm approve-builds <pkg>` or set true/false below when needed.
+allowBuilds: {}
