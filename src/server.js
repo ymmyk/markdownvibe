@@ -383,7 +383,7 @@ function renderIndexSection(section) {
   return `
     <section class="index-section">
       <h2 id="${section.id}">${escapeHtml(section.title)}</h2>
-      <div class="index-grid">
+      <div class="index-grid index-grid--${section.id}">
         ${items}
       </div>
     </section>`;

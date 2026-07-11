@@ -1174,6 +1174,16 @@ a {
   gap: 1rem;
 }
 
+.prose .index-grid--configured-paths {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1400px) {
+  .prose .index-grid--configured-paths {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .prose .index-card {
   display: grid;
   gap: 0.8rem;
